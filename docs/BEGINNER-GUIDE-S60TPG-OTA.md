@@ -43,8 +43,35 @@ It is **not** for the Zigbee S60 or a different regional model.
 6. This complete project folder, including `tools/` and `artifacts/`.
 7. Administrator access to your router.
 
-The tested router was a UniFi Cloud Gateway Ultra. Other routers need an
-equivalent source-specific DNAT and masquerade/SNAT configuration.
+The tested router was a UniFi Cloud Gateway Ultra, but UniFi is not inherently
+required. The router must be able to redirect one plug's outbound connection
+to one workstation and rewrite the return path. See **Router compatibility**
+before starting.
+
+### Router compatibility
+
+The required features may be called different things by router vendors:
+
+- a LAN-side or outbound **destination NAT/port-forward** rule, restricted to
+  the plug's source IP and the vendor OTA destination IP/port; and
+- **source NAT**, **SNAT**, **masquerade**, or **NAT reflection** for the
+  redirected connection so replies return through the router.
+
+| Router type | Expected route |
+|---|---|
+| UniFi gateway with SSH | Tested; use the `iptables` recipe in Part 4 |
+| OpenWrt or a Linux router | Likely suitable; needs an equivalent `nftables` or `iptables` recipe that must be tested before publishing |
+| pfSense/OPNsense | Likely suitable through LAN port-forward and outbound-NAT rules; must be tested before publishing |
+| Typical ISP/consumer router | Often cannot redirect LAN-originated traffic by source and destination |
+
+If the router cannot provide both operations, stop before Part 4. A practical
+community fallback is to put both the plug and workstation temporarily behind
+a separate OpenWrt/Linux travel router with a tested recipe. A DNS override is
+not enough because the stock update metadata supplies a destination IP.
+
+Do not guess at firewall rules: an incorrect rule can let the plug download
+the genuine vendor update or can redirect unrelated clients. The preflight in
+Part 4 must pass before sending an upgrade command.
 
 ## Words used in this guide
 
@@ -119,10 +146,26 @@ python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
 ```
 
-Next obtain the plug's owner-authorized encryption key:
+Replace `PLUG_IP` below with the address you wrote down, then create a
+discovery file for this particular plug:
 
 ```sh
-python3 tools/get_device_key.py
+python3 tools/discover_ewelink.py \
+  --timeout 8 \
+  --target PLUG_IP \
+  --output captures/my-s60/mdns.json
+```
+
+This first file identifies the particular plug. Every following command uses
+it as an input, which prevents a second S60 on the account from being selected
+by mistake.
+
+Now obtain that plug's owner-authorized encryption key:
+
+```sh
+python3 tools/get_device_key.py \
+  --mdns-capture captures/my-s60/mdns.json \
+  --output captures/my-s60/device-key.json
 ```
 
 Type the disposable eWeLink email and password at the local prompt. The
@@ -131,14 +174,27 @@ password is hidden while you type and is not saved.
 Query the available official update without installing it:
 
 ```sh
-python3 tools/query_ota.py
+python3 tools/query_ota.py \
+  --mdns-capture captures/my-s60/mdns.json \
+  --output captures/my-s60/ota-metadata.json
 ```
+
+The command prints the plug's current firmware version plus the vendor OTA
+host and port. Save the host and port for the router-interception rule. The
+private URL path remains only in the protected output file.
 
 Finally test read-only LAN communication. Replace the example IP:
 
 ```sh
-python3 tools/lan_get_state.py 192.168.1.96
+python3 tools/lan_get_state.py PLUG_IP \
+  --key-file captures/my-s60/device-key.json \
+  --output captures/my-s60/lan-state.json
 ```
+
+On tested stock firmware 1.1.1, the expected result is `LAN connection: PASS`
+followed by `Read-only state query: NOT SUPPORTED`. The eWeLink error 400 behind
+that message means this optional command is unavailable; it does not mean the
+LAN check failed.
 
 ### Checkpoint
 
@@ -174,24 +230,56 @@ The final SHA-256 line must begin with:
 10d79d33856bb842b26f0a1b6748751c091ec9738a72dd4de2033fbd0c329ff7
 ```
 
-### Experimental-status checkpoint
+### Hardware-validation checkpoint
 
-The original successful device received bridge **v2** through the stock OTA
-route and was later upgraded to bridge **v3**. The consolidated wrapped v3 file
-above contains the corrected bridge and passes all offline validation, but has
-not yet been tested as the first stock-to-bridge flash on a second plug.
-
-If you are not comfortable accepting that remaining first-flash uncertainty,
-stop here and wait for another hardware test.
+The wrapped bridge v3 file has passed all offline checks and was successfully
+installed directly from stock firmware 1.1.1 on a second S60TPG. This clean
+reproduction confirmed the stock-to-bridge, trial, final, metering and normal
+restart stages.
 
 ## Part 4: temporarily redirect the plug's update download
 
 This is the most advanced part. Ask someone comfortable with router
 administration if these terms are unfamiliar.
 
-Open the saved `captures/ota-metadata-*.json` file in a text editor. Find the
-official update URL and note its IP/host and port. The successful test used
+Use the `Vendor OTA host` and `port` printed by `query_ota.py`. They are also
+saved in `captures/my-s60/ota-metadata.json`. The successful test used
 `52.57.99.135` on port `8088`, but this can change.
+
+### What every router configuration must do
+
+Translate the following specification into your router's terminology:
+
+1. Give the plug and workstation fixed/reserved LAN addresses.
+2. On traffic entering the router from the LAN, match only this exact flow:
+   `source=PLUG_IP`, `destination=VENDOR_OTA_IP`, `protocol=TCP`, and
+   `destination-port=VENDOR_OTA_PORT`.
+3. Rewrite that flow's destination to
+   `WORKSTATION_IP:VENDOR_OTA_PORT` (destination NAT/DNAT).
+4. Rewrite its source or enable masquerade/NAT reflection so the workstation's
+   reply returns through the router instead of going directly to the plug.
+5. Permit that forwarded flow through any LAN firewall rule.
+6. Do not redirect other clients, other destinations, or other ports.
+7. Make the rules temporary and record exactly how to remove them.
+8. Run the end-to-end preflight below before sending an upgrade command.
+
+A normal **WAN port-forward** is not sufficient: this connection originates
+on the LAN. Router interfaces may call the required feature LAN NAT, outbound
+port forwarding, policy NAT, destination NAT, NAT reflection, or hairpin NAT.
+If the interface cannot express both steps 2–4, use a capable temporary router
+or stop.
+
+The intended packet path is:
+
+```text
+S60 PLUG_IP -> router (addressed to VENDOR_OTA_IP:PORT)
+             -> DNAT + masquerade
+             -> WORKSTATION_IP:PORT
+             -> reply through router
+             -> S60
+```
+
+The following is the tested implementation of that specification.
 
 On a UniFi gateway, first enable SSH in the UniFi console. Then connect:
 
@@ -279,7 +367,8 @@ python3 tools/serve_tasmota_ota.py \
   --device-ip PLUG_IP \
   --firmware artifacts/s60-ota-bridge-v3-1.2.1.ota \
   --email YOUR_EWELINK_EMAIL \
-  --expected-current-version 1.1.1 \
+  --expected-current-version STOCK_VERSION \
+  --mdns-capture captures/my-s60/mdns.json \
   --i-understand-stock-has-no-automatic-rollback
 ```
 
@@ -333,8 +422,8 @@ Open:
 http://192.168.4.1/
 ```
 
-If the page's Upload button does nothing, use the following terminal command
-while still connected to the bridge Wi-Fi:
+The browser Upload button has been unreliable in hardware testing. Use the
+tested terminal upload while still connected to the bridge Wi-Fi:
 
 ```sh
 curl --interface wlo1 --http1.1 --silent --show-error \
@@ -367,6 +456,11 @@ exit 0
 
 The bridge reboots automatically. Look for a Wi-Fi network whose name begins
 with `tasmota-`.
+
+Trial Tasmota may perform an automatic first-start restart while initializing
+its settings. Because the trial selects the bridge as its fallback, the bridge
+Wi-Fi may reappear instead. Do not upload the trial again. Power-cycle the plug
+once; the bridge has already selected the intact trial image for that boot.
 
 Connect using:
 
@@ -439,6 +533,13 @@ iptables -t nat -D POSTROUTING \
 
 Also remove any temporary rules created in the router's graphical interface.
 Tasmota does not require the eWeLink account.
+
+Restore the local safety lock if you renamed it in Part 5:
+
+```sh
+mv RECOVERY_LOCK.owner-authorized RECOVERY_LOCK
+test -f RECOVERY_LOCK && echo "Recovery lock restored"
+```
 
 ## Finished result
 

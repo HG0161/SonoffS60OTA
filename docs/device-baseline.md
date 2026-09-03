@@ -21,6 +21,14 @@ experiment. The development-unit status has since changed as noted below.
 Device ID, MAC address, account details and network credentials are deliberately
 excluded from the repository.
 
+## Independent reproduction
+
+A second UK S60TPG starting on stock 1.1.1 was converted on 2026-09-03. This
+run installed the consolidated wrapped bridge v3 directly through the stock
+updater, followed by the reviewed trial and final Tasmota images. Relay, button,
+LED, CSE7766 readings, return through the bridge fallback, and final normal
+restart all passed. Private identifiers and captures remain excluded.
+
 ## Update outcome
 
 The 1.1.1 to 1.2.0 vendor update completed and supplied a genuine wrapped image

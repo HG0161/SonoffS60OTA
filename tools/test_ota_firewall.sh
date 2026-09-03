@@ -59,23 +59,28 @@ trap cleanup EXIT INT TERM
 
 ip address add "$test_source/32" dev "$interface"
 
-if curl --silent --show-error --output /dev/null \
+echo "Test 1/3: check that plug-source traffic is intercepted"
+if curl --silent --output /dev/null \
     --interface "$test_source" --connect-timeout 5 --max-time 8 \
-    "http://$target:$port/"; then
+    "http://$target:$port/" 2>/dev/null; then
     echo "FAIL: plug-source traffic reached the vendor endpoint." >&2
     exit 1
 else
-    echo "PASS: plug-source traffic was intercepted by the temporary rule."
+    echo "PASS: the plug-source request was redirected away from the vendor endpoint."
 fi
 
-if curl --silent --show-error --output /dev/null \
+echo "Test 2/3: check that normal workstation traffic is not intercepted"
+if curl --silent --output /dev/null \
     --interface "$normal_source" --connect-timeout 5 --max-time 8 \
-    "http://$target:$port/"; then
+    "http://$target:$port/" 2>/dev/null; then
     echo "PASS: normal workstation traffic was not intercepted."
 else
     echo "INCONCLUSIVE: normal workstation traffic could not reach the vendor endpoint." >&2
     exit 1
 fi
 
-echo "PASS: the temporary test address was removed. Reconnect the S60 when ready."
-
+echo "Test 3/3: remove the temporary plug address"
+cleanup
+echo "PASS: the temporary test address was removed."
+echo "OVERALL INTERCEPTION PREFLIGHT: PASS"
+echo "Reconnect the S60 when ready."

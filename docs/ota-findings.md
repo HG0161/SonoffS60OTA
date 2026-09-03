@@ -315,10 +315,10 @@ first non-vendor OTA. Its recovery invariant is:
    bridge again. An interrupted second-stage upload reboots into the bridge.
 4. Select the uploaded image only after `esp_ota_end` validates it.
 
-The compiled native bridge is 857,440 bytes and its SHA-256 is
-`7b88b894614c04097a3b8a9449fc0b6312b5840f396e53a0ea325baf64cd5871`.
-The Sonoff-wrapped candidate is 857,540 bytes with whole-file SHA-256
-`25f7298e454c7922af51c3de3429a65d3b91652b32b153edee6ed388b590e072`.
+The reviewed native bridge v3 is 858,208 bytes and its SHA-256 is
+`7d41da7e04dbd6f81b6edcff8a47d565d6df077bdaf8d8d68873a5b2f424bf40`.
+The Sonoff-wrapped v3 image is 858,308 bytes with whole-file SHA-256
+`10d79d33856bb842b26f0a1b6748751c091ec9738a72dd4de2033fbd0c329ff7`.
 Offline analysis confirms:
 
 - ESP32-C3 chip ID 5 and five loadable segments;
@@ -333,6 +333,7 @@ Disassembly of the built ELF confirms that `app_main` calls
 startup functions.
 
 The bridge cannot protect against a bootloader rejection or a failure before
-`app_main` begins. It has not been sent to the device. A final reduced Tasmota
-image should also select the retained bridge as its initial next-boot fallback
-before the recovery lock is reconsidered.
+`app_main` begins. Wrapped bridge v3 was successfully installed directly from
+stock 1.1.1 during a second clean hardware run. The reviewed trial Tasmota then
+selected the retained bridge as its next-boot fallback before the final image
+was installed and verified.

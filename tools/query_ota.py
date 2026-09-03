@@ -8,6 +8,7 @@ import getpass
 import json
 import os
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,19 @@ def query_ota(region: str, token: str, identity: dict[str, str]) -> dict[str, An
     return response
 
 
+def ota_endpoints(ota_list: list[dict[str, Any]]) -> list[tuple[str, int]]:
+    """Extract only non-sensitive host/port pairs needed for router rules."""
+    endpoints: set[tuple[str, int]] = set()
+    for ota in ota_list:
+        for item in ota.get("binList", []):
+            parsed = urllib.parse.urlparse(str(item.get("downloadUrl", "")))
+            if not parsed.hostname or parsed.scheme not in {"http", "https"}:
+                continue
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            endpoints.add((parsed.hostname, port))
+    return sorted(endpoints)
+
+
 def private_json(path: Path, value: Any) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -102,13 +116,23 @@ def main() -> int:
 
     ota_list = response.get("data", {}).get("otaInfoList", [])
     print(f"Saved OTA metadata to {args.output} with mode 0600.")
+    print(
+        f"Current device firmware: {identity['model']} "
+        f"version {identity['version']}"
+    )
     print(f"Available OTA records: {len(ota_list)}")
     for ota in ota_list:
         print(f"Version: {ota.get('version')} | files: {len(ota.get('binList', []))}")
+    endpoints = ota_endpoints(ota_list)
+    if endpoints:
+        print("Router interception destination(s):")
+        for host, port in endpoints:
+            print(f"  Vendor OTA host: {host} | port: {port} | protocol: TCP")
+    else:
+        print("Router interception destination: not present in OTA metadata")
     print("No upgrade command was sent.")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -82,6 +82,35 @@ def get_state(
     return result
 
 
+def result_messages(result: dict[str, Any]) -> list[str]:
+    """Render the protocol result as beginner-friendly checkpoint messages."""
+    status = result.get("http_status")
+    reason = result.get("http_reason", "")
+    if status != 200:
+        return [f"LAN connection: FAIL (HTTP {status} {reason})"]
+
+    messages = [f"LAN connection: PASS (HTTP {status} {reason})"]
+    reply = result.get("reply")
+    if not isinstance(reply, dict):
+        messages.append("Read-only state query: UNEXPECTED RESPONSE (not eWeLink JSON)")
+        return messages
+
+    error = reply.get("error")
+    if error == 0:
+        if "decrypted" in result:
+            messages.append("Read-only state query: PASS (encrypted state decrypted)")
+        else:
+            messages.append("Read-only state query: PASS (device returned success)")
+    elif error == 400:
+        messages.append(
+            "Read-only state query: NOT SUPPORTED "
+            "(eWeLink error 400 is expected on tested S60 stock firmware)"
+        )
+    else:
+        messages.append(f"Read-only state query: DEVICE ERROR ({error})")
+    return messages
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ip")
@@ -97,9 +126,8 @@ def main() -> int:
         args.ip, args.port, device, args.timeout, args.source_address
     )
     private_json(args.output, result)
-    print(f"HTTP status: {result['http_status']} {result['http_reason']}")
-    if "reply" in result:
-        print("eWeLink error:", result["reply"].get("error"))
+    for message in result_messages(result):
+        print(message)
     print(f"Saved private response to {args.output}")
     return 0 if result.get("http_status") == 200 else 1
 

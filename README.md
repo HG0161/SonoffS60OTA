@@ -8,10 +8,12 @@ and is out of scope.
 
 ## Current status
 
-**Successful hardware conversion.** A UK S60TPG was converted from stock
-firmware 1.1.1 to custom Tasmota 15.6.0 entirely through OTA. Relay, button,
-LED, CSE7766 energy metering, and normal reboot were verified. The active app
-slot contains final Tasmota and the inactive slot contains recovery bridge v3.
+**Successfully reproduced on two devices.** Two UK S60TPG plugs were converted
+from stock firmware 1.1.1 to custom Tasmota 15.6.0 entirely through OTA. The
+second clean run installed wrapped bridge v3 directly from stock. Relay,
+button, LED, CSE7766 energy metering, and normal reboot were verified. The
+active app slot contains final Tasmota and the inactive slot contains recovery
+bridge v3.
 
 Start with the [beginner's guide](docs/BEGINNER-GUIDE-S60TPG-OTA.md), or use the
 [complete technical procedure](docs/HOWTO-S60TPG-OTA-TASMOTA.md). Sanitized
@@ -39,9 +41,10 @@ What is known:
   enforced, but it is supplied by the authenticated owner command; the updater
   does not require a vendor signature.
 - Stock 1.2.0 was built without ESP-IDF application rollback.
-- A small one-shot OTA bridge has been implemented and compiled. It selects the
-  untouched stock slot before starting Wi-Fi, then provides a browser upload
-  endpoint. The bridge and its wrapped candidate both pass offline validation.
+- A small one-shot OTA bridge has been implemented and hardware-tested as the
+  direct first stage from stock 1.1.1. It selects the untouched stock slot
+  before starting Wi-Fi, then provides an HTTP upload endpoint. The bridge and
+  its wrapped image also pass offline validation.
 
 The remaining irreducible first-boot risk is failure before the bridge reaches
 `app_main`; no application can repair that without bootloader rollback. The
@@ -85,7 +88,9 @@ python3 tools/probe_s60.py 192.168.1.50 --output captures/probe.json
 Discover its advertised eWeLink LAN service without a subnet scan:
 
 ```sh
-python3 tools/discover_ewelink.py --target 192.168.1.50
+python3 tools/discover_ewelink.py \
+  --target 192.168.1.50 \
+  --output captures/my-s60/mdns.json
 ```
 
 For an encrypted stock device, retrieve the matching LAN key through an
@@ -93,7 +98,9 @@ owner-authenticated eWeLink session. Run this yourself in a local terminal so
 the hidden password prompt is never passed through chat:
 
 ```sh
-python3 tools/get_device_key.py
+python3 tools/get_device_key.py \
+  --mdns-capture captures/my-s60/mdns.json \
+  --output captures/my-s60/device-key.json
 ```
 
 The password and cloud token are not stored. The device key is written with
@@ -102,13 +109,17 @@ mode `0600` under the git-ignored `captures/` directory.
 Validate encrypted, read-only LAN communication:
 
 ```sh
-python3 tools/lan_get_state.py 192.168.1.50
+python3 tools/lan_get_state.py 192.168.1.50 \
+  --key-file captures/my-s60/device-key.json \
+  --output captures/my-s60/lan-state.json
 ```
 
 Query the owner-authorized vendor OTA metadata without issuing an upgrade:
 
 ```sh
-python3 tools/query_ota.py
+python3 tools/query_ota.py \
+  --mdns-capture captures/my-s60/mdns.json \
+  --output captures/my-s60/ota-metadata.json
 ```
 
 Before any live OTA, add the source-specific DNAT and MASQUERADE rules from the

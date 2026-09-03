@@ -46,14 +46,26 @@ the router. Do not accept the offered vendor update while preparing the flash.
 From the project directory:
 
 ```sh
-python3 tools/get_device_key.py
-python3 tools/query_ota.py
-python3 tools/lan_get_state.py 192.168.1.96
+python3 tools/discover_ewelink.py \
+  --timeout 8 \
+  --target 192.168.1.96 \
+  --output captures/my-s60/mdns.json
+python3 tools/get_device_key.py \
+  --mdns-capture captures/my-s60/mdns.json \
+  --output captures/my-s60/device-key.json
+python3 tools/query_ota.py \
+  --mdns-capture captures/my-s60/mdns.json \
+  --output captures/my-s60/ota-metadata.json
+python3 tools/lan_get_state.py 192.168.1.96 \
+  --key-file captures/my-s60/device-key.json \
+  --output captures/my-s60/lan-state.json
 ```
 
 Enter the disposable eWeLink account credentials only at the local hidden
 prompt. Keys and captured metadata are stored under the git-ignored
-`captures/` directory with restrictive permissions.
+`captures/` directory with restrictive permissions. The mDNS capture is the
+device-selection input for the cloud commands, preventing another S60 on the
+same account from being selected accidentally.
 
 ## 2. Validate the payloads
 
@@ -149,6 +161,7 @@ python3 tools/serve_tasmota_ota.py \
   --firmware artifacts/s60-ota-bridge-v3-1.2.1.ota \
   --email YOUR_EWELINK_EMAIL \
   --expected-current-version 1.1.1 \
+  --mdns-capture captures/my-s60/mdns.json \
   --i-understand-stock-has-no-automatic-rollback
 ```
 
@@ -158,9 +171,9 @@ whole wrapped file. The app becoming offline and the blue LED flashing three
 times are expected during the update.
 
 The original hardware run installed wrapped bridge v2 through the stock path,
-then installed native bridge v3 through Tasmota. The consolidated wrapped v3
-above uses the same validated wrapper and updater path, but has not yet been
-independently exercised as a stock first-stage payload.
+then installed native bridge v3 through Tasmota. A second clean hardware run
+subsequently installed the consolidated wrapped v3 directly from stock 1.1.1
+and completed the trial/final sequence successfully.
 
 ## 5. Enter the bridge and install trial Tasmota
 
@@ -172,7 +185,8 @@ Password: s60-ota-bridge
 URL: http://192.168.4.1/
 ```
 
-If the browser upload button is unreliable, use the raw endpoint:
+The browser upload button has been unreliable in hardware testing. Use the raw
+endpoint:
 
 ```sh
 curl --interface wlo1 --http1.1 --silent --show-error \
@@ -193,6 +207,11 @@ On first boot, join the `tasmota-XXXXXX-XXXX` setup AP with password
 `s60-tasmota`, browse to `http://192.168.4.1/`, and enter the normal LAN Wi-Fi
 credentials. Reconnect the workstation to the LAN and open the plug's reserved
 address.
+
+If the bridge AP reappears before configuration, trial Tasmota likely performed
+an automatic first-start restart after selecting its fallback. Do not upload
+the image again. Power-cycle once; the bridge has selected the intact trial as
+the next boot application.
 
 Verify all of the following before proceeding:
 

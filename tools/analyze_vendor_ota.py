@@ -141,6 +141,26 @@ def analyze(data: bytes) -> dict[str, Any]:
     }
 
 
+def validation_checks(result: dict[str, Any]) -> list[tuple[str, bool]]:
+    """Return the named checks used to decide the process exit status."""
+    wrapper = result["wrapper"]
+    esp = result["esp_image"]
+    return [
+        ("Sonoff wrapper magic", wrapper["magic_valid"]),
+        ("Header reserved bytes", wrapper["header_reserved_zero"]),
+        ("Header CRC-32", wrapper["header_crc32_valid"]),
+        ("Payload offset", wrapper["payload_offset_valid"]),
+        ("Payload size", wrapper["payload_size_valid"]),
+        ("Payload CRC-32", wrapper["payload_crc32_valid"]),
+        ("Metadata CRC-32", wrapper["record_crc32_valid"]),
+        ("Metadata reserved bytes", wrapper["record_reserved_zero"]),
+        ("ESP32-C3 target", esp["chip_is_esp32_c3"]),
+        ("ESP image checksum", esp["checksum_valid"]),
+        ("ESP image SHA-256", esp["sha256_valid"] is not False),
+        ("No trailing payload bytes", esp["trailing_bytes"] == 0),
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path)
@@ -150,23 +170,13 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2))
-    wrapper = result["wrapper"]
-    esp = result["esp_image"]
-    checks = (
-        wrapper["magic_valid"],
-        wrapper["header_reserved_zero"],
-        wrapper["header_crc32_valid"],
-        wrapper["payload_offset_valid"],
-        wrapper["payload_size_valid"],
-        wrapper["payload_crc32_valid"],
-        wrapper["record_crc32_valid"],
-        wrapper["record_reserved_zero"],
-        esp["chip_is_esp32_c3"],
-        esp["checksum_valid"],
-        esp["sha256_valid"] is not False,
-        esp["trailing_bytes"] == 0,
-    )
-    return 0 if all(checks) else 1
+    checks = validation_checks(result)
+    print("\nValidation checks:")
+    for label, passed in checks:
+        print(f"  {'PASS' if passed else 'FAIL'}  {label}")
+    passed = all(value for _, value in checks)
+    print(f"\nOVERALL VALIDATION: {'PASS' if passed else 'FAIL'}")
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

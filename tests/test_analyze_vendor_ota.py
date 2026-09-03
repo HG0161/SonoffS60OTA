@@ -3,7 +3,7 @@ import struct
 import unittest
 import zlib
 
-from tools.analyze_vendor_ota import analyze
+from tools.analyze_vendor_ota import analyze, validation_checks
 from tools.build_vendor_ota import build_wrapper
 
 
@@ -37,6 +37,7 @@ class VendorOtaAnalysisTests(unittest.TestCase):
         self.assertTrue(result["esp_image"]["checksum_valid"])
         self.assertTrue(result["esp_image"]["sha256_valid"])
         self.assertEqual(result["esp_image"]["trailing_bytes"], 0)
+        self.assertTrue(all(passed for _, passed in validation_checks(result)))
 
     def test_payload_mutation_breaks_payload_crc_only(self):
         wrapped = bytearray(build_wrapper(make_esp_image(), version="9.9.9"))
@@ -47,6 +48,8 @@ class VendorOtaAnalysisTests(unittest.TestCase):
         self.assertTrue(result["wrapper"]["record_crc32_valid"])
         self.assertFalse(result["wrapper"]["payload_crc32_valid"])
         self.assertFalse(result["esp_image"]["sha256_valid"])
+        failed = {label for label, passed in validation_checks(result) if not passed}
+        self.assertEqual(failed, {"Payload CRC-32", "ESP image SHA-256"})
 
     def test_rejects_image_with_trailing_bytes(self):
         with self.assertRaisesRegex(ValueError, "trailing bytes"):

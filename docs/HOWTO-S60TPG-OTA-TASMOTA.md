@@ -109,6 +109,30 @@ iptables -t nat -I POSTROUTING 1 \
 Both rules are required. DNAT alone causes asymmetric replies and a TCP reset.
 Keep the SSH session open so the rules can be removed promptly.
 
+Confirm both exact rules exist by repeating them with `-C` instead of `-I`:
+
+```sh
+iptables -t nat -C PREROUTING \
+  -s 192.168.1.96 -d 52.57.99.135 -p tcp --dport 8088 \
+  -j DNAT --to-destination 192.168.1.141:8088
+iptables -t nat -C POSTROUTING \
+  -s 192.168.1.96 -d 192.168.1.141 -p tcp --dport 8088 \
+  -j MASQUERADE
+```
+
+The Python unit suite does not inspect the live gateway. To behaviourally test
+that only the plug source is intercepted, stop the OTA server, unplug the S60,
+and run this on the workstation:
+
+```sh
+sudo ./tools/test_ota_firewall.sh \
+  wlo1 192.168.1.96 192.168.1.141 52.57.99.135 8088
+```
+
+Continue only after both interception checks pass and the script confirms that
+its temporary address was removed. Reconnect the S60 and wait for it to return
+before starting the live sender.
+
 ## 4. Perform the stock first-stage OTA
 
 The live sender is deliberately guarded. Confirm the exact IPs, model, current
@@ -228,4 +252,3 @@ will overwrite that slot. To preserve the two-stage layout for an upgrade:
 
 Keep both bridge and final Tasmota artifacts offline. Do not use the stock
 eWeLink updater again after conversion.
-

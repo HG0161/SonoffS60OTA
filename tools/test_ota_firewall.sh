@@ -1,18 +1,54 @@
 #!/bin/sh
 set -eu
 
-interface="wlo1"
-test_source="192.168.1.96"
-normal_source="192.168.1.141"
-target="52.57.99.135"
-port="8088"
+usage() {
+    cat >&2 <<'EOF'
+Usage: sudo ./tools/test_ota_firewall.sh INTERFACE PLUG_IP WORKSTATION_IP VENDOR_OTA_IP [PORT]
+
+Run only after creating the source-specific DNAT and MASQUERADE rules.
+The S60 must be unplugged and the local OTA server must not be running.
+
+Example:
+  sudo ./tools/test_ota_firewall.sh wlo1 192.168.1.50 192.168.1.20 203.0.113.10 8088
+EOF
+}
+
+if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
+    usage
+    exit 2
+fi
+
+interface=$1
+test_source=$2
+normal_source=$3
+target=$4
+port=${5:-8088}
+
+case "$port" in
+    ''|*[!0-9]*)
+        echo "PORT must be a number." >&2
+        exit 2
+        ;;
+esac
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "This test must run as root." >&2
     exit 2
 fi
-if ip -4 address show dev "$interface" | grep -q " $test_source/"; then
-    echo "$test_source is already assigned; refusing to continue." >&2
+if ! ip -4 address show dev "$interface" >/dev/null 2>&1; then
+    echo "Interface does not exist: $interface" >&2
+    exit 2
+fi
+if ! ip -4 address show dev "$interface" | grep -Fq " $normal_source/"; then
+    echo "$normal_source is not assigned to $interface." >&2
+    exit 2
+fi
+if ip -4 address show dev "$interface" | grep -Fq " $test_source/"; then
+    echo "$test_source is already assigned locally; refusing to continue." >&2
+    exit 2
+fi
+if ping -c 1 -W 1 "$test_source" >/dev/null 2>&1; then
+    echo "$test_source replied. Unplug the S60 and check for an IP conflict." >&2
     exit 2
 fi
 
@@ -26,17 +62,20 @@ ip address add "$test_source/32" dev "$interface"
 if curl --silent --show-error --output /dev/null \
     --interface "$test_source" --connect-timeout 5 --max-time 8 \
     "http://$target:$port/"; then
-    echo "FAIL: temporary S60 source reached the OTA server." >&2
+    echo "FAIL: plug-source traffic reached the vendor endpoint." >&2
     exit 1
 else
-    echo "PASS: temporary S60 source was rejected by the firewall."
+    echo "PASS: plug-source traffic was intercepted by the temporary rule."
 fi
 
 if curl --silent --show-error --output /dev/null \
     --interface "$normal_source" --connect-timeout 5 --max-time 8 \
     "http://$target:$port/"; then
-    echo "PASS: normal workstation source still reached the OTA server."
+    echo "PASS: normal workstation traffic was not intercepted."
 else
-    echo "INCONCLUSIVE: normal workstation source could not reach the OTA server." >&2
+    echo "INCONCLUSIVE: normal workstation traffic could not reach the vendor endpoint." >&2
     exit 1
 fi
+
+echo "PASS: the temporary test address was removed. Reconnect the S60 when ready."
+

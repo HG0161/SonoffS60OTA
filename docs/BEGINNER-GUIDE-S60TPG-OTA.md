@@ -226,6 +226,47 @@ iptables -t nat -I POSTROUTING 1 \
 Both rules are required. Leave the router terminal open so you can remove them
 afterward.
 
+### Check the router rules before continuing
+
+Still on the router, repeat each rule with `-C` instead of `-I`:
+
+```sh
+iptables -t nat -C PREROUTING \
+  -s PLUG_IP -d VENDOR_OTA_IP -p tcp --dport 8088 \
+  -j DNAT --to-destination WORKSTATION_IP:8088 \
+  && echo "DNAT rule present"
+
+iptables -t nat -C POSTROUTING \
+  -s PLUG_IP -d WORKSTATION_IP -p tcp --dport 8088 \
+  -j MASQUERADE \
+  && echo "MASQUERADE rule present"
+```
+
+Both confirmation messages must appear.
+
+For an additional end-to-end routing check:
+
+1. Stop the OTA sender if it is running.
+2. Unplug the S60 so its reserved address is free.
+3. On the workstation, run the following with your real values:
+
+```sh
+sudo ./tools/test_ota_firewall.sh \
+  INTERFACE PLUG_IP WORKSTATION_IP VENDOR_OTA_IP 8088
+```
+
+For example only:
+
+```sh
+sudo ./tools/test_ota_firewall.sh \
+  wlo1 192.168.1.96 192.168.1.141 52.57.99.135 8088
+```
+
+Continue only after both interception checks say `PASS` and the final line says
+the temporary address was removed. Then plug the S60 back in and wait for it to
+reconnect. This confirms source-specific interception; it does not make the
+initial firmware flash risk-free.
+
 ## Part 5: send the recovery bridge through stock OTA
 
 Back in the workstation terminal, run the following as one command. Replace

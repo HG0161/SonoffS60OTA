@@ -111,6 +111,22 @@ Query the owner-authorized vendor OTA metadata without issuing an upgrade:
 python3 tools/query_ota.py
 ```
 
+Before any live OTA, add the source-specific DNAT and MASQUERADE rules from the
+complete guide and check them on the router with `iptables -t nat -C`. The
+Python unit suite does **not** inspect live router rules. For a behavioural
+preflight, stop the OTA server, unplug the S60 so its address is free, then run:
+
+```sh
+sudo ./tools/test_ota_firewall.sh \
+  INTERFACE PLUG_IP WORKSTATION_IP VENDOR_OTA_IP 8088
+```
+
+Continue only if it prints both interception `PASS` messages and confirms that
+the temporary address was removed. Substitute every placeholder; the script
+has no built-in network addresses. See the
+[beginner's guide](docs/BEGINNER-GUIDE-S60TPG-OTA.md#part-4-temporarily-redirect-the-plugs-update-download)
+for the complete sequence and limitations.
+
 Download the genuine artifacts without triggering the device update, requiring
 the SHA-256 values supplied by the authenticated manifest:
 

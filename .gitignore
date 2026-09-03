@@ -1,0 +1,35 @@
+# Private per-device material. Never commit this directory.
+captures/
+
+# Local Python and PlatformIO environments/downloads.
+.pio-home/
+.platformio/
+.platformio-core/
+.python-venv/
+.venv/
+.pio/
+bridge/.pio/
+
+# Generated build configuration and caches.
+sdkconfig.*
+__pycache__/
+*.py[cod]
+*.elf
+
+# Old or experimental firmware is excluded by default. The four reviewed
+# release images below are intentionally versioned so a clone is usable.
+*.bin
+*.bin.*
+*.img
+*.ota
+!artifacts/s60-ota-bridge-v3-1.2.1.ota
+!artifacts/s60-ota-bridge-v3-idf5.3.1.bin
+!artifacts/s60-tasmota-15.6.0-trial-cse7766.bin
+!artifacts/s60-tasmota-15.6.0-final-cse7766.bin
+
+# Local authorization markers must never replace the shipped safety lock.
+RECOVERY_LOCK.owner-authorized*
+
+# Accidental/temporary files from development.
+0
+*.bak

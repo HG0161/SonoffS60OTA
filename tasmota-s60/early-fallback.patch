@@ -1,0 +1,48 @@
+--- a/tasmota/tasmota.ino
++++ b/tasmota/tasmota.ino
+@@ -34,5 +34,22 @@
+ #endif  // USE_TLS
+ #include "include/tasmota_globals.h"        // Function prototypes and global configuration
++
++#ifdef S60_CUSTOM_BUILD
++/* FIRMWARE_LITE disables the generic energy subsystem after
++ * user_config_override.h is processed.  Restore the S60's meter here,
++ * before driver source selection. */
++#ifndef USE_ENERGY_SENSOR
++#define USE_ENERGY_SENSOR
++#endif
++#undef USE_ENERGY_MARGIN_DETECTION
++#undef USE_ENERGY_POWER_LIMIT
++#undef USE_ENERGY_DUMMY
++#undef USE_HLW8012
++#undef USE_MCP39F501
++#undef USE_BL09XX
++#undef USE_ADE7953
++#define USE_CSE7766
++#endif  // S60_CUSTOM_BUILD
+ #include "include/i18n.h"                   // Language support configured by my_user_config.h
+ #include "include/tasmota_template.h"       // Hardware configuration
+ 
+@@ -406,8 +406,22 @@
+ #ifdef ESP32
+ // IDF5.3 fix esp_gpio_reserve used in init PSRAM. Needed by Tasmota.ino esp_gpio_revoke
+ #include "esp_private/esp_gpio_reserve.h"
++#ifdef S60_OTA_TRIAL
++#include "esp_ota_ops.h"
++#endif  // S60_OTA_TRIAL
+ #endif  // ESP32
+ 
+ void setup(void) {
++#ifdef S60_OTA_TRIAL
++  /* Keep the OTA bridge as the next-boot fallback.  This deliberately runs
++   * before settings, GPIO, Wi-Fi, web and driver initialization. */
++  const esp_partition_t *s60_running = esp_ota_get_running_partition();
++  const esp_partition_t *s60_peer = esp_ota_get_next_update_partition(nullptr);
++  if ((nullptr != s60_running) && (nullptr != s60_peer) &&
++      (s60_running != s60_peer) &&
++      (ESP_PARTITION_TYPE_APP == s60_peer->type)) {
++    esp_ota_set_boot_partition(s60_peer);
++  }
++#endif  // S60_OTA_TRIAL
+ #ifdef ESP32
+ #ifdef CONFIG_IDF_TARGET_ESP32

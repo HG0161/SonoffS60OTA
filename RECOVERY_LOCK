@@ -1,0 +1,13 @@
+LIVE STOCK-OTA SAFETY LOCK
+
+The state-changing OTA tools deliberately refuse to run while this file is
+present. This is the safe state in which the project is distributed.
+
+Before renaming this file, read the complete guide, verify the exact S60TPG
+model and stock firmware, validate every firmware checksum, reserve the plug's
+IP address, confirm the router redirection is source-specific, and accept that
+the initial stock-to-bridge flash has no automatic bootloader-level rollback.
+
+Keep power stable during every upload. A failed first boot may require
+electrically isolated serial recovery by an experienced technician.
+

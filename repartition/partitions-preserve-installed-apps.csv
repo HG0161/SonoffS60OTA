@@ -1,0 +1,10 @@
+# Candidate S60 4 MB layout. Do not flash this table directly.
+# It preserves both installed application offsets and creates 512 KiB of
+# filesystem space by shortening only ota_1.
+# Name,    Type, SubType, Offset,   Size,     Flags
+nvs,       data, nvs,     0x009000, 0x005000,
+otadata,   data, ota,     0x00e000, 0x002000,
+phy_init,  data, phy,     0x010000, 0x001000,
+ota_0,     app,  ota_0,   0x020000, 0x1f0000,
+ota_1,     app,  ota_1,   0x210000, 0x170000,
+spiffs,    data, spiffs,  0x380000, 0x080000,

@@ -1,0 +1,8 @@
+# Build-time layout only. The OTA bridge uses the S60 partition table already
+# present in flash at runtime and is distributed as an application image only.
+# Name,    Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x009000, 0x005000,
+otadata,  data, ota,     0x00e000, 0x002000,
+phy_init, data, phy,     0x010000, 0x001000,
+ota_0,    app,  ota_0,   0x020000, 0x1f0000,
+ota_1,    app,  ota_1,   0x210000, 0x1f0000,

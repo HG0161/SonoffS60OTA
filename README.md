@@ -53,6 +53,29 @@ The remaining irreducible first-boot risk is failure before the bridge reaches
 hardware trial passed this point, and bridge v3 now confirms itself before
 setting its peer as the next-boot fallback.
 
+## Community help wanted: confirm the actual partition map
+
+We have a working map derived from the stock firmware, but we still need an
+independent byte-for-byte capture of the partition-table sector from real S60
+hardware. If you can safely obtain one, please open a GitHub issue or discussion
+and include:
+
+- the exact S60 model, regional suffix and hardware revision;
+- the installed firmware version;
+- whether the device is untouched stock, vendor-updated, or converted;
+- the raw 4 KiB sector at flash offset `0x8000` (`0x8000..0x8fff`);
+- the sector's SHA-256; and
+- a decoded list of every partition entry, including type, subtype, offset,
+  size and flags.
+
+Please do **not** publish a complete flash dump: it may contain Wi-Fi
+credentials, device keys and other private data. Do not connect ordinary
+grounded serial equipment while the plug is connected to mains. A partition
+sector captured earlier from an owned device is also useful.
+
+The expected layout to compare against is documented in
+[Part 2: partition-table migration](docs/part-2-repartitioning.md).
+
 ## Next steps: partition-table migration
 
 The working conversion deliberately keeps the original Sonoff partition table.

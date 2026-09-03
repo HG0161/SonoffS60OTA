@@ -1,16 +1,15 @@
 # Sonoff S60 stock-to-Tasmota OTA
 
 This project provides a tested **no-opening, no-UART** conversion from the stock
-firmware of the Wi-Fi Sonoff S60 (ESP32-C3 / Coolkit SM-049) to Tasmota.
-
-The target is specifically the Wi-Fi S60. The Zigbee S60 is different hardware
-and is out of scope.
+firmware of the Wi-Fi Sonoff S60 (ESP32-C3 / Coolkit SM-049) to Tasmota using
+only Over The Air (OTA)
 
 ## Current status
 
 **Successfully completed on two devices.** The first UK S60TPG entered the
-conversion on stock firmware 1.2.0 and received wrapped bridge v2. The second
-entered on stock 1.1.1 and installed wrapped bridge v3 directly. Both completed
+conversion on stock firmware 1.2.0 after i accidentally update to 1.2 during 
+development. It also received wrapped bridge v2. The second entered on stock 
+1.1.1 and installed wrapped bridge v3 directly. Both completed
 the trial and final custom Tasmota 15.6.0 stages entirely through OTA. Relay,
 button, LED, CSE7766 energy metering, and normal reboot were verified. The
 active app slot contains final Tasmota and the inactive slot contains recovery

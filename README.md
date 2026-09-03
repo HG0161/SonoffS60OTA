@@ -1,6 +1,6 @@
-# Sonoff S60 stock-to-Tasmota OTA research
+# Sonoff S60 stock-to-Tasmota OTA
 
-This project investigates a **no-opening, no-UART** conversion from the stock
+This project provides a tested **no-opening, no-UART** conversion from the stock
 firmware of the Wi-Fi Sonoff S60 (ESP32-C3 / Coolkit SM-049) to Tasmota.
 
 The target is specifically the Wi-Fi S60. The Zigbee S60 is different hardware
@@ -8,18 +8,20 @@ and is out of scope.
 
 ## Current status
 
-**Successfully reproduced on two devices.** Two UK S60TPG plugs were converted
-from stock firmware 1.1.1 to custom Tasmota 15.6.0 entirely through OTA. The
-second clean run installed wrapped bridge v3 directly from stock. Relay,
+**Successfully completed on two devices.** The first UK S60TPG entered the
+conversion on stock firmware 1.2.0 and received wrapped bridge v2. The second
+entered on stock 1.1.1 and installed wrapped bridge v3 directly. Both completed
+the trial and final custom Tasmota 15.6.0 stages entirely through OTA. Relay,
 button, LED, CSE7766 energy metering, and normal reboot were verified. The
 active app slot contains final Tasmota and the inactive slot contains recovery
 bridge v3.
 
-Start with the [beginner's guide](docs/BEGINNER-GUIDE-S60TPG-OTA.md), or use the
-[complete technical procedure](docs/HOWTO-S60TPG-OTA-TASMOTA.md). Sanitized
-device details are in [docs/device-baseline.md](docs/device-baseline.md), and
-the decoded updater and wrapper are documented in
-[docs/ota-findings.md](docs/ota-findings.md).
+Start with the [guide](docs/GUIDE.md). The
+[AI-generated guide](docs/AI-GENERATED-GUIDE.md) and
+[complete technical procedure](docs/HOWTO-S60TPG-OTA-TASMOTA.md) provide more
+background. Sanitized device details are in
+[docs/device-baseline.md](docs/device-baseline.md), and the decoded updater and
+wrapper are documented in [docs/ota-findings.md](docs/ota-findings.md).
 
 The four reviewed firmware images are included in `artifacts/`. Verify them
 before use with:
@@ -51,39 +53,31 @@ The remaining irreducible first-boot risk is failure before the bridge reaches
 hardware trial passed this point, and bridge v3 now confirms itself before
 setting its peer as the next-boot fallback.
 
-## Safety and scope
+## Next steps: partition-table migration
 
-Only test devices you own or have permission to test. The tools here do not
-require opening a mains-powered plug. Do not connect a normal USB-UART adapter
-to an S60 while the S60 is connected to mains: the low-voltage electronics are
-not safely isolated from mains.
+The working conversion deliberately keeps the original Sonoff partition table.
+The next phase is to replace it with a verified layout that preserves both
+installed application offsets while adding a 512 KiB filesystem partition.
 
-The basic LAN probe performs information requests only. It does not send an
-upgrade command, switch the relay, change Wi-Fi settings, or contact eWeLink.
-The separate experimental OTA-command and live sender tools are state-changing.
-Every sender checks `RECOVERY_LOCK` before asking for credentials or serving a
-firmware body.
+Before an actual partition-table write:
 
-## Research gates
+1. Build an inspect-only bridge that captures the live partition-table sector,
+   OTA-selection data, active slot, application headers and hashes.
+2. Require an exact match against the known stock layout and both installed
+   images before enabling any write operation.
+3. Build and test Tasmota against the candidate layout, including filesystem
+   format, read/write persistence, restart, relay, button and energy metering.
+4. Add a separate, explicitly authorized commit mode that writes the complete
+   partition-table sector and verifies every byte after the write.
+5. Perform the first migration only with stable power and an isolated serial
+   recovery method available.
+6. After a successful boot, format the new filesystem and repeat the complete
+   hardware and OTA regression tests.
 
-An OTA flasher will only be implemented after these gates are answered:
-
-1. **Fingerprint:** exact S60 model, hardware revision and stock firmware.
-2. **Reachability:** local DIY/LAN OTA endpoint, authenticated cloud command,
-   or another owner-controlled trigger.
-3. **Validation (answered):** wrapper CRCs, payload CRC, owner-supplied whole-file
-   SHA-256, model/version metadata, and native ESP image verification; no vendor
-   signature was found.
-4. **Layout (answered):** two `0x1f0000` application slots; an OTA payload must
-   be at most 2,031,616 bytes.
-5. **Recovery (answered at application level):** bridge v3 confirms itself,
-   pins itself before erasing its peer, and selects an uploaded app only after
-   validation. Failure before `app_main` remains outside software recovery.
-6. **Payload (answered):** reduced trial and final Tasmota 15.6.0 images fit the
-   stock slots and were verified on the S60TPG, including CSE7766 metering.
-
-See [docs/research-plan.md](docs/research-plan.md) for the working hypothesis
-and experiment order.
+The proposed map, required checks and migration sequence are documented in
+[Part 2: partition-table migration](docs/part-2-repartitioning.md). The current
+[candidate CSV](repartition/partitions-preserve-installed-apps.csv) is for
+offline validation only and must not yet be flashed directly.
 
 ## License
 

@@ -1,4 +1,4 @@
-# Beginner's guide: install Tasmota on a Sonoff S60TPG without opening it
+# AI-generated guide: install Tasmota on a Sonoff S60TPG without opening it
 
 This is the plain-English version of the successful S60TPG OTA procedure.
 “OTA” means updating firmware over Wi-Fi. You do not open the plug or connect

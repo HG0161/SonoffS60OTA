@@ -16,7 +16,7 @@ experiment. The development-unit status has since changed as noted below.
 | LAN endpoint | TCP 8081 |
 | LAN API version | 1 |
 | LAN payload | AES-encrypted (`encrypt=true`) |
-| Vendor update installed | Yes, during the controlled capture workflow |
+| Vendor update installed | Yes, before the first Tasmota conversion |
 
 Device ID, MAC address, account details and network credentials are deliberately
 excluded from the repository.
@@ -31,12 +31,13 @@ restart all passed. Private identifiers and captures remain excluded.
 
 ## Update outcome
 
-The 1.1.1 to 1.2.0 vendor update completed and supplied a genuine wrapped image
-for offline analysis. Stock 1.2.0 was subsequently replaced during the
-successful controlled OTA conversion. The active application slot now contains
-final Tasmota 15.6.0 and the inactive slot contains recovery bridge v3. The
-original stock applications are gone; the original bootloader and partition
-table remain intentionally.
+The first plug updated from 1.1.1 to vendor firmware 1.2.0 before its Tasmota
+conversion and supplied a genuine wrapped image for offline analysis. Stock
+1.2.0 was subsequently replaced using wrapped bridge v2, followed by native
+bridge v3 and Tasmota. The active application slot now contains final Tasmota
+15.6.0 and the inactive slot contains recovery bridge v3. The original stock
+applications are gone; the original bootloader and partition table remain
+intentionally.
 
 ## First LAN probe
 

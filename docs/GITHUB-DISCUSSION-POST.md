@@ -1,8 +1,10 @@
 # Successful no-disassembly OTA conversion: Sonoff S60TPG to Tasmota 15.6.0
 
-I have now successfully converted a UK Sonoff S60TPG (BS1363, ESP32-C3) from
-stock eWeLink firmware 1.1.1 to Tasmota 15.6.0 without opening the plug or using
-UART.
+I have now successfully converted two UK Sonoff S60TPG plugs (BS1363,
+ESP32-C3) to Tasmota 15.6.0 without opening either plug or using UART. The
+first entered the conversion on stock eWeLink firmware 1.2.0 and received
+wrapped bridge v2. The second entered on stock 1.1.1 and received the
+consolidated wrapped bridge v3 directly.
 
 ## Confirmed working
 
@@ -147,4 +149,3 @@ I have also prepared the full reproducible scripts, wrapper analyzer, guarded
 range server, bridge source, Tasmota build overlay and longer step-by-step guide.
 They should be reviewed and published together rather than distributing an
 unexplained binary.
-

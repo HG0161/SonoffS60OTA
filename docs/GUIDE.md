@@ -1,4 +1,4 @@
-# Beginner guide: Sonoff S60TPG to Tasmota over Wi-Fi
+# Guide: Sonoff S60TPG to Tasmota over Wi-Fi
 
 This guide records the process successfully used on two Sonoff S60TPG plugs.
 It installs Tasmota without opening the plug.
@@ -292,7 +292,9 @@ mv RECOVERY_LOCK RECOVERY_LOCK.owner-authorized
 ```
 
 Now run the sender. `STOCK_VERSION` must exactly match the version printed by
-`query_ota.py`. Only stock version 1.1.1 has been hardware-tested so far.
+`query_ota.py`. The current wrapped bridge-v3 command has been hardware-tested
+directly from stock 1.1.1. The earlier stock 1.2.0 conversion used wrapped
+bridge v2 before upgrading the recovery bridge to v3.
 
 ```sh
 python3 tools/serve_tasmota_ota.py \

@@ -52,54 +52,40 @@ The remaining irreducible first-boot risk is failure before the bridge reaches
 hardware trial passed this point, and bridge v3 now confirms itself before
 setting its peer as the next-boot fallback.
 
-## Community help wanted: confirm the actual partition map
+## Part 2: exact Safeboot-layout migration
 
-We have a working map derived from the stock firmware, but we still need an
-independent byte-for-byte capture of the partition-table sector from real S60
-hardware. If you can safely obtain one, please open a GitHub issue or discussion
-and include:
+A private complete 4 MiB post-conversion dump has now supplied the actual S60
+partition sector. Its table MD5 is valid and the complete sector SHA-256 is
+allow-listed. The confirmed entries, boundaries and hash are recorded in
+[the actual partition map](docs/s60-actual-partition-map.md). Never publish the
+complete dump or NVS captures: they may contain Wi-Fi credentials and device
+keys.
 
-- the exact S60 model, regional suffix and hardware revision;
-- the installed firmware version;
-- whether the device is untouched stock, vendor-updated, or converted;
-- the raw 4 KiB sector at flash offset `0x8000` (`0x8000..0x8fff`);
-- the sector's SHA-256; and
-- a decoded list of every partition entry, including type, subtype, offset,
-  size and flags.
+The selected target is no longer the earlier preserve-in-place candidate. It
+is an exact byte-for-byte copy of the partition sector embedded in one frozen
+official `tasmota32c3.factory.bin`: 20 KiB NVS, canonical `otadata`, Safeboot,
+2,880 KiB `app0`, and 320 KiB SPIFFS.
 
-Please do **not** publish a complete flash dump: it may contain Wi-Fi
-credentials, device keys and other private data. Do not connect ordinary
-grounded serial equipment while the plug is connected to mains. A partition
-sector captured earlier from an owned device is also useful.
+The migration is implemented as resumable `preflight`, `stage`, and separately
+armed `commit` phases. It pins and hashes every image, requires Bluetooth to be
+running from high old `ota_1`, validates the retained NVS, independently
+captures staged Safeboot read-back bytes, and keeps the destructive table
+writer behind `REPARTITION_LOCK`. The scripts and Berry source compile and pass
+offline tests, but the commit has **not** yet been trialled on this S60
+hardware. Power loss during its one non-redundant table-sector replacement may
+still require physical recovery.
 
-The expected layout to compare against is documented in
-[Part 2: partition-table migration](docs/part-2-repartitioning.md).
+Start or resume with:
 
-## Next steps: partition-table migration
+```sh
+python3 tools/safeboot_migration_status.py
+```
 
-The working conversion deliberately keeps the original Sonoff partition table.
-The next phase is to replace it with a verified layout that preserves both
-installed application offsets while adding a 512 KiB filesystem partition.
-
-Before an actual partition-table write:
-
-1. Build an inspect-only bridge that captures the live partition-table sector,
-   OTA-selection data, active slot, application headers and hashes.
-2. Require an exact match against the known stock layout and both installed
-   images before enabling any write operation.
-3. Build and test Tasmota against the candidate layout, including filesystem
-   format, read/write persistence, restart, relay, button and energy metering.
-4. Add a separate, explicitly authorized commit mode that writes the complete
-   partition-table sector and verifies every byte after the write.
-5. Perform the first migration only with stable power and an isolated serial
-   recovery method available.
-6. After a successful boot, format the new filesystem and repeat the complete
-   hardware and OTA regression tests.
-
-The proposed map, required checks and migration sequence are documented in
-[Part 2: partition-table migration](docs/part-2-repartitioning.md). The current
-[candidate CSV](repartition/partitions-preserve-installed-apps.csv) is for
-offline validation only and must not yet be flashed directly.
+Read the [guarded migration plan](docs/part-2-safeboot-migration-plan.md) and
+the complete [operator runbook](docs/part-2-safeboot-migration-runbook.md)
+before starting a live phase. The older
+[preserve-in-place proposal](docs/part-2-repartitioning.md) is retained only as
+superseded design history and must not be flashed.
 
 ## License
 

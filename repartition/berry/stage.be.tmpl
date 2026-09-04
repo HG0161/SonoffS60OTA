@@ -1,0 +1,94 @@
+# S60 Safeboot migration: stage official Safeboot in inactive old ota_0.
+# This phase does not change the partition table or boot selection.
+import flash
+import crypto
+
+var base_url = "@BASE_URL@"
+var session = "@SESSION@"
+var expected_table = bytes("@SOURCE_TABLE_SHA256@")
+var expected_nvs = bytes("@LIVE_NVS_SHA256@")
+var expected_safeboot = bytes("@SAFEBOOT_SHA256@")
+var safeboot_length = @SAFEBOOT_LENGTH@
+var stage_address = 0x20000
+
+def guard(ok, message)
+  if !ok
+    raise "migration_refused", message
+  end
+end
+
+def sha_region(address, length)
+  var hash = crypto.SHA256()
+  var offset = 0
+  while offset < length
+    var count = length - offset
+    if count > 4096 count = 4096 end
+    hash.update(flash.read(address + offset, count))
+    offset += count
+    tasmota.yield()
+  end
+  return hash.out()
+end
+
+def post_text(path, body)
+  var client = webclient()
+  client.begin(base_url + path)
+  var status = client.POST(body)
+  client.close()
+  guard(status == 200, format("POST %s returned HTTP %i", path, status))
+end
+
+def fetch_chunk(index, expected_length)
+  var path = format("/chunk/safeboot/%i", index)
+  var client = webclient()
+  client.begin(base_url + path)
+  var status = client.GET()
+  guard(status == 200, format("GET %s returned HTTP %i", path, status))
+  guard(client.get_size() == expected_length * 2, "Safeboot chunk HTTP length differs")
+  var encoded = client.get_string()
+  guard(size(encoded) == expected_length * 2, "Safeboot chunk body length differs")
+  var data = bytes(encoded)
+  guard(size(data) == expected_length, "Safeboot chunk hex is invalid")
+  return data
+end
+
+def run_stage()
+  guard(tasmota.arch() == "esp32c3", "device is not ESP32-C3")
+  guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
+  guard(flash.current_ota() == 1, "refusing to overwrite the running old ota_0")
+  guard(sha_region(0x8000, 0x1000) == expected_table, "source table changed")
+  guard(sha_region(0x9000, 0x5000) == expected_nvs, "NVS changed since preflight")
+  guard(stage_address + safeboot_length <= 0x210000, "Safeboot exceeds inactive slot")
+
+  var offset = 0
+  var index = 0
+  while offset < safeboot_length
+    var count = safeboot_length - offset
+    if count > 4096 count = 4096 end
+    var data = fetch_chunk(index, count)
+    flash.write(stage_address + offset, data)
+    var readback = flash.read(stage_address + offset, count)
+    guard(readback == data, format("read-back differs at 0x%X", stage_address + offset))
+    post_text(format("/capture/staged/%i", index), readback.tohex())
+    offset += count
+    index += 1
+    if index % 16 == 0 print(format("S60 STAGE: %i/%i bytes", offset, safeboot_length)) end
+    tasmota.yield()
+  end
+
+  var staged_hash = sha_region(stage_address, safeboot_length)
+  guard(staged_hash == expected_safeboot, "complete staged Safeboot SHA-256 differs")
+  guard(sha_region(0x8000, 0x1000) == expected_table, "source table changed during staging")
+  guard(sha_region(0x9000, 0x5000) == expected_nvs, "NVS changed during staging")
+
+  var report = format(
+    "session=%s\nstatus=PASS\ncurrent_ota=%i\ntable_sha256=%s\n" +
+    "nvs_sha256=%s\nstaged_sha256=%s\nstaged_size=%i\n",
+    session, flash.current_ota(), expected_table.tohex(), expected_nvs.tohex(),
+    staged_hash.tohex(), safeboot_length)
+  post_text("/report/stage", report)
+  print("S60 SAFEBOOT STAGE PASS; table and boot selection are unchanged")
+  return true
+end
+
+return run_stage()

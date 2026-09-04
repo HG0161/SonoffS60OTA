@@ -1,0 +1,75 @@
+# S60 Safeboot migration: read-only live preflight.
+# Rendered and served by tools/serve_safeboot_migration.py.
+import flash
+import crypto
+
+var base_url = "@BASE_URL@"
+var session = "@SESSION@"
+var expected_table = bytes("@SOURCE_TABLE_SHA256@")
+
+def guard(ok, message)
+  if !ok
+    raise "migration_refused", message
+  end
+end
+
+def sha_region(address, length)
+  var hash = crypto.SHA256()
+  var offset = 0
+  while offset < length
+    var count = length - offset
+    if count > 4096 count = 4096 end
+    hash.update(flash.read(address + offset, count))
+    offset += count
+    tasmota.yield()
+  end
+  return hash.out()
+end
+
+def post_text(path, body)
+  var client = webclient()
+  client.begin(base_url + path)
+  var status = client.POST(body)
+  client.close()
+  guard(status == 200, format("POST %s returned HTTP %i", path, status))
+end
+
+def upload_region(name, address, length)
+  var offset = 0
+  var index = 0
+  while offset < length
+    var count = length - offset
+    if count > 4096 count = 4096 end
+    var data = flash.read(address + offset, count)
+    post_text(format("/capture/%s/%i", name, index), data.tohex())
+    offset += count
+    index += 1
+    tasmota.yield()
+  end
+end
+
+def run_preflight()
+  guard(tasmota.arch() == "esp32c3", "device is not ESP32-C3")
+  guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
+  guard(flash.current_ota() == 1, "Bluetooth must be running from old ota_1")
+
+  var table_hash = sha_region(0x8000, 0x1000)
+  guard(table_hash == expected_table, "live partition table is not the allow-listed S60 table")
+  var nvs_hash = sha_region(0x9000, 0x5000)
+  var otadata_hash = sha_region(0x1D000, 0x2000)
+
+  upload_region("table", 0x8000, 0x1000)
+  upload_region("nvs", 0x9000, 0x5000)
+  upload_region("otadata", 0x1D000, 0x2000)
+
+  var report = format(
+    "session=%s\nstatus=PASS\nflash_size=%i\ncurrent_ota=%i\n" +
+    "table_sha256=%s\nnvs_sha256=%s\notadata_sha256=%s\n",
+    session, flash.size(), flash.current_ota(), table_hash.tohex(),
+    nvs_hash.tohex(), otadata_hash.tohex())
+  post_text("/report/preflight", report)
+  print("S60 PREFLIGHT PASS; host independently validated uploaded bytes")
+  return true
+end
+
+return run_preflight()

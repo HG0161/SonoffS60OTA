@@ -1,0 +1,8 @@
+# Exact partition table embedded in official release tasmota32c3.factory.bin.
+# The live migration uses the extracted binary sector, not a regenerated copy.
+# Name,    Type, SubType, Offset,   Size,     Flags
+nvs,       data, nvs,     0x009000, 0x005000,
+otadata,   data, ota,     0x00e000, 0x002000,
+safeboot,  app,  factory, 0x010000, 0x0d0000,
+app0,      app,  ota_0,   0x0e0000, 0x2d0000,
+spiffs,    data, spiffs,  0x3b0000, 0x050000,

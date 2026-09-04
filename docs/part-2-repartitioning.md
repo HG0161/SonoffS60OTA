@@ -1,5 +1,12 @@
 # Part 2: understand and safely change the S60 partition table
 
+> **Superseded design record.** A complete hardware dump later disproved parts
+> of the assumed data-partition map, and the chosen target is now the exact
+> official Tasmota Safeboot layout. Do not flash the candidate described here.
+> Use the [confirmed current map](s60-actual-partition-map.md),
+> [reviewed migration plan](part-2-safeboot-migration-plan.md), and
+> [operator runbook](part-2-safeboot-migration-runbook.md).
+
 ## Scope and current evidence
 
 The converted S60 has a 4 MiB (`0x400000`) ESP32-C3 flash. Its stock

@@ -29,6 +29,7 @@ __pycache__/
 
 # Local authorization markers must never replace the shipped safety lock.
 RECOVERY_LOCK.owner-authorized*
+REPARTITION_LOCK.owner-authorized*
 
 # Accidental/temporary files from development.
 0

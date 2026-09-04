@@ -1,0 +1,154 @@
+# S60 Safeboot migration: one-use, explicitly armed canonical-layout commit.
+# Loading this file performs no writes. It returns the commit closure.
+import flash
+import crypto
+
+var base_url = "@BASE_URL@"
+var session = "@SESSION@"
+var arm_token = "@ARM_TOKEN@"
+var armed = true
+var source_table_hash = bytes("@SOURCE_TABLE_SHA256@")
+var target_table_hash = bytes("@TARGET_TABLE_SHA256@")
+var live_nvs_hash = bytes("@LIVE_NVS_SHA256@")
+var safeboot_hash = bytes("@SAFEBOOT_SHA256@")
+var staging_pad_hash = bytes("@STAGING_PAD_SHA256@")
+var erased_tail_hash = bytes("@ERASED_TAIL_SHA256@")
+var erased_otadata_hash = bytes("@ERASED_OTADATA_SHA256@")
+var safeboot_length = @SAFEBOOT_LENGTH@
+var copy_length = @SAFEBOOT_COPY_LENGTH@
+var staging_pad_length = @STAGING_PAD_LENGTH@
+var erased_tail_length = @ERASED_TAIL_LENGTH@
+
+def guard(ok, message)
+  if !ok
+    raise "migration_refused", message
+  end
+end
+
+def sha_region(address, length)
+  var hash = crypto.SHA256()
+  var offset = 0
+  while offset < length
+    var count = length - offset
+    if count > 4096 count = 4096 end
+    hash.update(flash.read(address + offset, count))
+    offset += count
+    tasmota.yield()
+  end
+  return hash.out()
+end
+
+def fetch_target_table()
+  var client = webclient()
+  client.begin(base_url + "/target-table")
+  var status = client.GET()
+  guard(status == 200, format("target table GET returned HTTP %i", status))
+  guard(client.get_size() == 8192, "target table HTTP length differs")
+  var encoded = client.get_string()
+  guard(size(encoded) == 8192, "target table body length differs")
+  var table = bytes(encoded)
+  guard(size(table) == 4096, "target table hex is invalid")
+  guard(crypto.SHA256().update(table).out() == target_table_hash,
+        "downloaded target table SHA-256 differs")
+  return table
+end
+
+def best_effort_report(status, rollback)
+  try
+    var body = format(
+      "session=%s\nstatus=%s\nrollback=%s\ncurrent_ota=%i\n" +
+      "target_table_sha256=%s\nsafeboot_sha256=%s\n",
+      session, status, str(rollback), flash.current_ota(),
+      target_table_hash.tohex(), safeboot_hash.tohex())
+    var client = webclient()
+    client.begin(base_url + "/report/commit")
+    var code = client.POST(body)
+    client.close()
+    print(format("S60 COMMIT report HTTP %i", code))
+  except .. as report_exception, report_message
+    print("S60 COMMIT report failed:", report_exception, report_message)
+  end
+end
+
+def restore_source_layout(old_table, old_otadata)
+  try
+    flash.write(0x1D000, old_otadata)
+    guard(flash.read(0x1D000, 0x2000) == old_otadata, "old otadata restore differs")
+    flash.write(0x8000, old_table)
+    guard(flash.read(0x8000, 0x1000) == old_table, "source table restore differs")
+    print("S60 ROLLBACK PASS: source table and live old otadata restored; DO NOT REBOOT")
+    return true
+  except .. as rollback_exception, rollback_message
+    print("S60 ROLLBACK FAILED; DO NOT REBOOT OR REMOVE POWER:",
+          rollback_exception, rollback_message)
+    return false
+  end
+end
+
+def commit(provided_token)
+  guard(armed, "this commit closure has already been consumed")
+  guard(provided_token == arm_token, "arming token differs")
+  guard(tasmota.arch() == "esp32c3", "device is not ESP32-C3")
+  guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
+  guard(flash.current_ota() == 1, "commit requires old ota_1 to be running")
+  guard(sha_region(0x8000, 0x1000) == source_table_hash, "source table changed")
+  guard(sha_region(0x9000, 0x5000) == live_nvs_hash, "NVS changed since preflight")
+  guard(sha_region(0x20000, safeboot_length) == safeboot_hash,
+        "staged Safeboot SHA-256 differs")
+  guard(sha_region(0x20000 + safeboot_length, staging_pad_length) == staging_pad_hash,
+        "staged Safeboot sector padding is not erased")
+
+  var target_table = fetch_target_table()
+  var old_table = flash.read(0x8000, 0x1000)
+  var old_otadata = flash.read(0x1D000, 0x2000)
+  armed = false
+
+  try
+    var offset = 0
+    var sector = 0
+    while offset < copy_length
+      # Downward copy is overlap-safe: source is read before its lower destination is erased.
+      var data = flash.read(0x20000 + offset, 0x1000)
+      flash.write(0x10000 + offset, data)
+      guard(flash.read(0x10000 + offset, 0x1000) == data,
+            format("canonical Safeboot read-back differs at 0x%X", 0x10000 + offset))
+      offset += 0x1000
+      sector += 1
+      if sector % 16 == 0 print(format("S60 COMMIT: copied %i/%i bytes", offset, copy_length)) end
+      tasmota.yield()
+    end
+
+    guard(sha_region(0x10000, safeboot_length) == safeboot_hash,
+          "canonical Safeboot SHA-256 differs")
+    guard(sha_region(0x10000 + safeboot_length, staging_pad_length) == staging_pad_hash,
+          "canonical Safeboot sector padding differs")
+
+    if erased_tail_length > 0
+      flash.erase(0x10000 + copy_length, erased_tail_length)
+      guard(sha_region(0x10000 + copy_length, erased_tail_length) == erased_tail_hash,
+            "canonical Safeboot erased tail differs")
+    end
+
+    # New canonical otadata is erased. Never call flash.factory(): its registry is stale.
+    flash.erase(0xE000, 0x2000)
+    guard(sha_region(0xE000, 0x2000) == erased_otadata_hash,
+          "new canonical otadata did not erase cleanly")
+
+    flash.write(0x8000, target_table)
+    guard(flash.read(0x8000, 0x1000) == target_table,
+          "official partition-table byte-for-byte read-back differs")
+    guard(sha_region(0x8000, 0x1000) == target_table_hash,
+          "official partition-table SHA-256 read-back differs")
+  except .. as commit_exception, commit_message
+    var rollback_ok = restore_source_layout(old_table, old_otadata)
+    best_effort_report("FAIL", rollback_ok)
+    raise commit_exception, commit_message
+  end
+
+  print("S60 COMMIT PASS: exact official table installed; restarting without settings save")
+  best_effort_report("PASS", false)
+  tasmota.cmd("Restart 99")
+  return true
+end
+
+return commit

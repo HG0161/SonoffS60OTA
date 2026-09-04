@@ -2,9 +2,10 @@
 
 ## Status
 
-This is a reviewed migration plan, not an executable procedure. No
-partition-table writer should be run until the listed artifacts, checks, and
-recovery gates exist.
+This is the reviewed design behind the staged tools. The operator procedure is
+in [`part-2-safeboot-migration-runbook.md`](part-2-safeboot-migration-runbook.md).
+The destructive commit remains locked by default and has not been trialled on
+this S60 hardware.
 
 The source S60TPG table was decoded from a complete 4 MiB flash dump and its
 MD5 record was verified. See
@@ -43,6 +44,13 @@ NVS must therefore be proven readable after the logical shrink before commit.
 Configuration export is mandatory, but it cannot restore connectivity until
 normal Tasmota is running.
 
+The captured dump does not presently pass that requirement. Its live
+`Settings` blob index declares two chunks: chunk 1 is within the retained
+20 KiB, while chunk 0 is in the page beginning at `0x010000`. That page will
+become Safeboot. Seeing the `Settings` key in the retained pages is therefore
+not sufficient; every indexed chunk and its CRC must validate inside the
+retained window.
+
 ## Required artifacts
 
 Freeze these before touching the layout:
@@ -73,8 +81,10 @@ Do not write the plug during this phase.
 4. Require Safeboot to fit within `0x0d0000` and final Tasmota within
    `0x2d0000`.
 5. Parse the current first five NVS pages (`0x009000..0x00dfff`). Require an
-   active page, adequate free space, and the Tasmota configuration namespace
-   and Wi-Fi settings needed by Safeboot.
+   active page, adequate free space, and complete, CRC-valid blob indexes and
+   chunks for Tasmota `Settings` and Wi-Fi `sta.apinfo`. The frozen source dump
+   is expected to fail this check and is retained as evidence, not accepted as
+   migration-ready NVS.
 6. Prepare an inspect-only Berry preflight that reports the live table hash,
    running partition, flash size, NVS state and every artifact hash.
 7. Prepare a separate commit operation protected by an exact, single-use
@@ -92,9 +102,16 @@ Do not write the plug during this phase.
    - Berry `flash.current_ota()` returns `1`;
    - the live partition sector still matches the original S60 hash;
    - Wi-Fi and Berry remain usable.
-4. Disable periodic settings saves, then capture and validate the current
-   first 20 KiB of NVS again. Stop if canonical-size NVS is not independently
-   shown to contain usable current configuration.
+4. Back up Tasmota configuration, the S60 template, rules and custom files.
+5. Because the captured NVS is not self-contained, issue documented Tasmota
+   `Reset 4` while high Bluetooth is active. This resets firmware settings to
+   defaults while retaining Wi-Fi and may cause NVS to recreate compact
+   records. Reconfirm Wi-Fi, Berry access and old `ota_1` after restart.
+6. Disable periodic settings saves, then capture and validate the current
+   first 20 KiB of NVS again. `Reset 4` is not the proof: stop unless the live
+   preflight independently finds every declared `Settings` and `sta.apinfo`
+   blob chunk, correct total sizes, valid entry/data CRCs, and usable page
+   structure wholly within that range.
 
 Before the table commit, the low Bluetooth image remains a bootable fallback.
 
@@ -130,24 +147,32 @@ Immediately before commit, require:
 - the first 20 KiB NVS preflight still passes;
 - the target sector exactly equals `0x8000..0x8fff` from the pinned official
   factory image;
-- the original table is buffered in RAM for a same-session restoration
-  attempt if the table readback fails.
+- the original table and live old `otadata` are buffered in RAM for a
+  same-session source-layout restoration attempt if any commit write fails.
 
 Commit sequence:
 
 1. Copy the verified Safeboot image downward from staging at `0x020000` to its
    canonical address `0x010000`, one 4 KiB sector at a time. Read a source
    sector before erasing/writing its lower destination.
-2. Verify the canonical Safeboot header and complete image length in flash.
-3. Erase only `0x8000..0x8fff`.
-4. Write the exact official table sector.
-5. Read the table back and compare every byte.
-6. If comparison fails while Bluetooth remains alive, make one controlled
-   attempt to restore and verify the original buffered table. Do not reboot on
-   failure.
-7. Erase the new `otadata` range at `0x00e000..0x00ffff` so the bootloader
-   selects the factory partition.
-8. Invoke Tasmota's factory-boot selection and reboot immediately.
+2. Verify the canonical Safeboot hash and its erased partition tail in flash.
+3. Erase and verify the new `otadata` range at `0x00e000..0x00ffff` so the
+   bootloader selects the factory partition after the table changes.
+4. Erase/write the exact official table sector at `0x8000..0x8fff`.
+5. Read the table back and compare every byte and its SHA-256.
+6. If a commit operation fails while Bluetooth remains alive, make one
+   controlled attempt to restore and verify the original table and live old
+   `otadata`. Do not reboot after a rollback attempt.
+7. Reboot immediately using the already-running application; do not invoke
+   `flash.factory()` after changing the table.
+
+`flash.factory()` must not be used in this exact-layout migration. ESP-IDF's
+in-RAM partition registry still describes the source S60 table until reboot,
+so the function would erase the old `otadata` address at `0x01d000`. That
+address is inside canonical Safeboot after it has been copied to `0x010000`,
+and erasing it would corrupt the staged recovery image. With the new
+`0x00e000` `otadata` sectors erased and a factory entry present, the bootloader
+selects Safeboot without that call.
 
 Writing Safeboot at `0x010000` destroys the old NVS tail and old boot metadata.
 After that copy begins, an unexpected reset relies on the bootloader locating
@@ -211,12 +236,11 @@ Implementation may begin only if all answers are yes:
 
 - Is an exact copy of the selected official release table required despite
   the increased Wi-Fi recovery risk?
-- Does the current first 20 KiB NVS region independently validate and contain
-  the configuration Safeboot needs?
+- After backup and controlled NVS recreation, does the live first 20 KiB NVS
+  region independently validate complete `Settings` and `sta.apinfo` blobs?
 - Are all artifacts from one pinned official release and independently
   hashed?
 - Are Safeboot and final Tasmota smaller than their official partitions?
 - Are inspect and commit separate, with commit disabled by default?
 - Is stable power available for the sole table-sector write?
 - Will the private dump and NVS data remain outside Git?
-

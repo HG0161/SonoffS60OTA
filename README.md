@@ -52,7 +52,7 @@ The remaining irreducible first-boot risk is failure before the bridge reaches
 hardware trial passed this point, and bridge v3 now confirms itself before
 setting its peer as the next-boot fallback.
 
-## Part 2: exact Safeboot-layout migration
+## Part 2: WIP NOT TESTED exact Safeboot-layout migration
 
 A private complete 4 MiB post-conversion dump has now supplied the actual S60
 partition sector. Its table MD5 is valid and the complete sector SHA-256 is

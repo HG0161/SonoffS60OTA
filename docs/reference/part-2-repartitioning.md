@@ -36,7 +36,7 @@ actually read at runtime remains the stock one.
 ## Candidate layout
 
 The least disruptive useful change is
-[`repartition/partitions-preserve-installed-apps.csv`](../repartition/partitions-preserve-installed-apps.csv):
+[`repartition/partitions-preserve-installed-apps.csv`](../../repartition/partitions-preserve-installed-apps.csv):
 
 | Partition | Start | End (exclusive) | Size | Change |
 |---|---:|---:|---:|---|

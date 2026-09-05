@@ -1,94 +1,174 @@
-# Sonoff S60 stock-to-Tasmota OTA
+# Sonoff S60 → Tasmota, without opening the plug
 
-This project provides a tested **no-opening, no-UART** conversion from the stock
-firmware of the Wi-Fi Sonoff S60 (ESP32-C3 / Coolkit SM-049) to Tasmota using
-only Over The Air (OTA)
+Turns a stock Sonoff S60 smart plug into one running **official Tasmota**, over
+Wi-Fi, with no soldering and without taking the plug apart.
 
-## Current status
-
-**Successfully completed on two devices.** The first UK S60TPG entered the
-conversion on stock firmware 1.2.0 after i accidentally update to 1.2 during 
-development. It also received wrapped bridge v2. The second entered on stock 
-1.1.1 and installed wrapped bridge v3 directly. Both completed
-the trial and final custom Tasmota 15.6.0 stages entirely through OTA. Relay,
-button, LED, CSE7766 energy metering, and normal reboot were verified. The
-active app slot contains final Tasmota and the inactive slot contains recovery
-bridge v3.
-
-Start with the [guide](docs/GUIDE.md). The
-[AI-generated guide](docs/AI-GENERATED-GUIDE.md) and
-[complete technical procedure](docs/HOWTO-S60TPG-OTA-TASMOTA.md) provide more
-background. Sanitized device details are in
-[docs/device-baseline.md](docs/device-baseline.md), and the decoded updater and
-wrapper are documented in [docs/ota-findings.md](docs/ota-findings.md).
-
-The four reviewed firmware images are included in `artifacts/`. Verify them
-before use with:
+One command walks you through it:
 
 ```sh
-sha256sum -c SHA256SUMS
+python3 tools/s60_autoflash.py run
 ```
 
-What is known:
+It asks questions in plain English, checks the plug at every stage, and can be
+stopped and restarted at any point without losing its place.
 
-- The device has a 4 MB ESP32-C3 flash.
-- Reported stock firmware uses two OTA app slots at `0x20000` and `0x210000`.
-- Tested hardware has Secure Boot and flash encryption disabled.
-- An owner-authenticated eWeLink command can direct the stock updater to a
-  private-LAN HTTP URL.
-- The 100-byte Sonoff wrapper, all three CRC-32 fields, and the native ESP32-C3
-  payload validation are decoded and reproducibly generated.
-- The manifest digest is the SHA-256 of the complete wrapped file. It is
-  enforced, but it is supplied by the authenticated owner command; the updater
-  does not require a vendor signature.
-- Stock 1.2.0 was built without ESP-IDF application rollback.
-- A small one-shot OTA bridge has been implemented and hardware-tested as the
-  direct first stage from stock 1.1.1. It selects the untouched stock slot
-  before starting Wi-Fi, then provides an HTTP upload endpoint. The bridge and
-  its wrapped image also pass offline validation.
+---
 
-The remaining irreducible first-boot risk is failure before the bridge reaches
-`app_main`; no application can repair that without bootloader rollback. The
-hardware trial passed this point, and bridge v3 now confirms itself before
-setting its peer as the next-boot fallback.
+## Read this before you start
 
-## Part 2: WIP NOT TESTED exact Safeboot-layout migration
+**This is a mains-voltage device and one step cannot be undone.**
 
-A private complete 4 MiB post-conversion dump has now supplied the actual S60
-partition sector. Its table MD5 is valid and the complete sector SHA-256 is
-allow-listed. The confirmed entries, boundaries and hash are recorded in
-[the actual partition map](docs/s60-actual-partition-map.md). Never publish the
-complete dump or NVS captures: they may contain Wi-Fi credentials and device
-keys.
+Partway through, the tool rewrites the small area of memory that tells the plug
+where its firmware lives. It takes about a minute. If the power is cut during
+that minute, the plug will not start again, and no amount of Wi-Fi cleverness
+will bring it back — it would need opening and a USB-serial adapter.
 
-The selected target is no longer the earlier preserve-in-place candidate. It
-is an exact byte-for-byte copy of the partition sector embedded in one frozen
-official `tasmota32c3.factory.bin`: 20 KiB NVS, canonical `otadata`, Safeboot,
-2,880 KiB `app0`, and 320 KiB SPIFFS.
+That step has worked every time it has been run, and everything before it is
+reversible. But please only do this with a plug you can afford to lose.
 
-The migration is implemented as resumable `preflight`, `stage`, and separately
-armed `commit` phases. It pins and hashes every image, requires Bluetooth to be
-running from high old `ota_1`, validates the retained NVS, independently
-captures staged Safeboot read-back bytes, and keeps the destructive table
-writer behind `REPARTITION_LOCK`. The scripts and Berry source compile and pass
-offline tests, but the commit has **not** yet been trialled on this S60
-hardware. Power loss during its one non-redundant table-sector replacement may
-still require physical recovery.
+Two things reduce the risk to nearly nothing:
 
-Start or resume with:
+- plug it into a socket nobody is going to switch off
+- don't start if you need the plug working in the next hour
+
+**This is not official Sonoff or Tasmota software.** Converting the plug ends
+any support or warranty you had, and the eWeLink app will no longer control it.
+
+---
+
+## What you need
+
+| | |
+|---|---|
+| **The plug** | A Wi-Fi Sonoff S60 (ESP32-C3 inside). Tested on the UK S60TPG on stock firmware 1.1.1 and 1.2.0. |
+| **An eWeLink account** | Free. A throwaway one is fine. The plug has to be added to it first. |
+| **A computer** | Linux, with Wi-Fi, Python 3.10 or newer. |
+| **Your router's admin page** | You need to add one redirect rule. If you can't get into your router, you can't do this. |
+| **About an hour** | Most of it waiting. |
+
+Your Wi-Fi must be **2.4 GHz** — the plug cannot use 5 GHz.
+
+## Getting set up
 
 ```sh
-python3 tools/safeboot_migration_status.py
+git clone https://github.com/HG0161/SonoffS60OTA.git
+cd SonoffS60OTA
+python3 -m pip install -r requirements.txt
+python3 -m unittest discover -s tests
 ```
 
-Read the [guarded migration plan](docs/part-2-safeboot-migration-plan.md) and
-the complete [operator runbook](docs/part-2-safeboot-migration-runbook.md)
-before starting a live phase. The older
-[preserve-in-place proposal](docs/part-2-repartitioning.md) is retained only as
-superseded design history and must not be flashed.
+The tests should all pass. They check the tool against itself and take a few
+seconds; nothing touches the plug.
 
-## License
+## Doing it
 
-Project code and modifications are distributed under GPL-3.0-only. The custom
-Tasmota binaries remain subject to Tasmota's GPL-3.0-only license. See
-[`LICENSE`](LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+```sh
+python3 tools/s60_autoflash.py run
+```
+
+That's the whole interface. It will:
+
+1. **Ask you to add the plug in the eWeLink app** and turn on LAN Control.
+2. **Ask the plug what firmware it has** and where it downloads updates from.
+3. **Give you one rule to add to your router** — with the exact values filled
+   in — then test that the rule works before anything is written.
+4. **Replace the Sonoff firmware** with a small installer of ours. *This is the
+   point of no return.*
+5. **Ask you to join two Wi-Fi networks**, briefly, so the plug can be given
+   its real firmware. It tells you the network names.
+6. **Rebuild the plug's memory layout** to match the official Tasmota one. It
+   shows you what it has checked and asks you to type one sentence to confirm.
+7. **Install official Tasmota**, apply the S60 settings, and check the result.
+
+At the end it verifies the finished plug against the official Tasmota release,
+region by region, and tells you whether every byte matches.
+
+### If you have to stop
+
+Close the window, lose your Wi-Fi, run out of time — it doesn't matter. Run the
+same command again:
+
+```sh
+python3 tools/s60_autoflash.py run
+```
+
+It remembers which plug it was working on and what it had done. Where a step
+was interrupted, it checks the plug to work out whether that step finished
+before asking you anything, and tells you what it found.
+
+## What you end up with
+
+Official Tasmota on the official partition layout — the same arrangement you
+would get from flashing the plug over USB:
+
+| Area | What's in it | Size |
+|---|---|---|
+| `nvs` | Settings | 20 KiB |
+| `otadata` | Which firmware to start | 8 KiB |
+| `safeboot` | Recovery firmware for future updates | 832 KiB |
+| `app0` | Tasmota itself | 2,880 KiB |
+| `spiffs` | File storage | 320 KiB |
+
+Which means normal Tasmota upgrades from then on, a filesystem the plug never
+had, and 2,880 KiB of room for firmware instead of the 1,984 KiB the Sonoff
+layout allowed.
+
+After it finishes, check the physical side yourself: the relay clicks, the
+button toggles it, the LED follows, and with a load plugged in the voltage,
+current and power readings look sensible.
+
+## When something goes wrong
+
+Start with **[docs/troubleshooting.md](docs/troubleshooting.md)** — it covers
+the problems that actually came up while this was being built, including what
+each one looked like on screen.
+
+The most common by far is the router rule. It is not a normal port forward, and
+plenty of routers can't do it or call it something unexpected.
+
+## How it works, roughly
+
+The stock firmware will accept an update if the command comes from the account
+that owns the plug. The tool uses that: it asks the plug's own update server
+for the firmware details, has your router send that one download to your
+computer instead, and answers with our firmware rather than Sonoff's.
+
+From there the plug is ours, and the rest is careful housekeeping — get a full
+Tasmota on, move it out of the way, rebuild the memory layout underneath it,
+then put the real thing back.
+
+**[docs/what-happens.md](docs/what-happens.md)** explains it properly, in
+English, including why the risky step is risky.
+
+## Safety, and why you can believe the checks
+
+- **Nothing is trusted, everything is hashed.** Every firmware file is checked
+  against a known SHA-256 before use, and the finished plug is read back and
+  compared against the official release.
+- **The destructive step is locked by default.** A file in this repository has
+  to be deliberately renamed before the tool will even offer it, and it then
+  requires a typed sentence — not a y/n.
+- **The plug checks too.** Every stage that writes refuses to run unless the
+  plug is in exactly the state it expects, and says so rather than guessing.
+- **Everything is recorded.** Each run keeps its evidence in `captures/`, which
+  git ignores, so nothing private ends up published.
+
+## For developers
+
+The user-facing tool sits on top of a set of smaller, single-purpose scripts in
+`tools/`, each of which can be run on its own. The research behind all of it —
+how the update mechanism was worked out, the partition analysis, the reviewed
+migration plan and the manual procedure — is in
+**[docs/reference/](docs/reference/)**.
+
+Start with [docs/reference/manual-procedure.md](docs/reference/manual-procedure.md)
+if you want to do it by hand, and
+[docs/reference/ota-findings.md](docs/reference/ota-findings.md) for how the
+firmware format was decoded.
+
+## Thanks
+
+Worked out with the Tasmota community's discussion of this device, and built on
+Tasmota itself. Tasmota is GPL-3.0-only; so is this.
+
+See [`LICENSE`](LICENSE) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

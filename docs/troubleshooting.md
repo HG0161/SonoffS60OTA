@@ -119,7 +119,7 @@ Wi-Fi details built in, and swaps it for the official one at the very end.
 If the plug does not come back at all after that step, Wi-Fi recovery is not
 possible. The plug would need opening and a USB-serial adapter connected to the
 chip inside. See
-[reference/recovery-1.1.1.md](reference/recovery-1.1.1.md).
+[reference/recovery-1.1.1.md](../archive/docs/reference/recovery-1.1.1.md).
 
 This is the risk you accepted at the start, and it is the only failure in this
 process that cannot be fixed by running the tool again.

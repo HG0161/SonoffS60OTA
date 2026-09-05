@@ -1,7 +1,7 @@
 # Reference material
 
 The research and engineering behind the converter. None of this is needed to
-convert a plug — start at the [README](../../README.md) for that — but it is
+convert a plug — start at the [README](../../../README.md) for that — but it is
 here so the work can be checked, argued with and built on.
 
 ## How the conversion works

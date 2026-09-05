@@ -185,11 +185,11 @@ tools, the bridge firmware source and the custom Tasmota build that got the
 early plugs converted - none of it is needed now, and none of it is deleted. The research behind all of it —
 how the update mechanism was worked out, the partition analysis, the reviewed
 migration plan and the manual procedure — is in
-**[docs/reference/](docs/reference/)**.
+**[archive/docs/reference/](archive/docs/reference/)**.
 
-Start with [docs/reference/manual-procedure.md](docs/reference/manual-procedure.md)
+Start with [archive/docs/reference/manual-procedure.md](archive/docs/reference/manual-procedure.md)
 if you want to do it by hand, and
-[docs/reference/ota-findings.md](docs/reference/ota-findings.md) for how the
+[archive/docs/reference/ota-findings.md](archive/docs/reference/ota-findings.md) for how the
 firmware format was decoded.
 
 ## Thanks

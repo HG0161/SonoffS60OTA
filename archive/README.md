@@ -38,3 +38,11 @@ provenance of the images in `artifacts/`.
 Tests for the archived tools, moved with them so the main suite stays about the
 converter. Run them with `python3 -m unittest discover -s archive/tests` from
 the repository root.
+
+## `artifacts/`
+
+`s60-ota-bridge-v2-idf5.3.1.elf` — debug symbols for bridge v2, 8 MB, useful
+only for decoding a crash dump from that build. The v2 firmware itself stays in
+the main `artifacts/` directory, because it was published in response to
+[issue #1](https://github.com/HG0161/SonoffS60OTA/issues/1) and someone may
+still be waiting on it.

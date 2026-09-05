@@ -3,14 +3,29 @@
 Turns a stock Sonoff S60 smart plug into one running **official Tasmota**, over
 Wi-Fi, with no soldering and without taking the plug apart.
 
-One command walks you through it:
+The conversion is driven by one command, which asks questions in plain English,
+checks the plug at every stage, and can be stopped and restarted at any point
+without losing its place:
 
 ```sh
 python3 tools/s60_autoflash.py run
 ```
 
-It asks questions in plain English, checks the plug at every stage, and can be
-stopped and restarted at any point without losing its place.
+> ### Where this is up to
+>
+> **The conversion works.** It has taken four plugs from the shop-bought state
+> to official Tasmota, the last one entirely by the script above, and the
+> finished plugs are byte-for-byte identical to one flashed over USB.
+>
+> **It is not yet a one-command install for a stranger.** Before that command
+> will run, you have to build a firmware image locally and prepare a small
+> bundle of files — a step that needs a Tasmota build environment and about an
+> hour of patience. See [Before you can run it](#before-you-can-run-it).
+>
+> Removing that step is the next piece of work. Until it is done, this is
+> honestly for people who are comfortable building firmware, not for someone
+> who just wants Tasmota on a plug. If that is you, the repository is worth
+> watching rather than starting today.
 
 ---
 
@@ -84,13 +99,48 @@ python3 -m unittest discover -s tests
 The tests should all pass. They check the tool against itself and take a few
 seconds; nothing touches the plug.
 
+## Before you can run it
+
+This is the unfinished part, and it is unfinished for a good reason rather than
+laziness.
+
+Partway through the conversion the plug is left running a small startup
+firmware, briefly, with nowhere to get Wi-Fi details from. The way round that is
+an image with your own network name and password compiled into it. Nobody else's
+copy will do, and it plainly cannot be shipped in a public repository — so you
+have to build it, and you need a Tasmota build environment to do so.
+
+The tool then needs a bundle: that image, the official Tasmota release files,
+and the partition table extracted from them, all pinned by hash so nothing can
+be swapped underneath you. That bundle lives in `captures/`, which git ignores,
+because on a real run it also holds device keys and flash contents.
+
+The scripts are all here:
+
+```sh
+python3 tools/configure_recovery_safeboot.py        # asks for your Wi-Fi, privately
+tools/build_recovery_safeboot.sh /tmp/tasmota-src   # builds the image
+python3 tools/prepare_recovery_safeboot_migration.py
+python3 tools/safeboot_migration_status.py          # says whether the bundle is good
+```
+
+The full procedure, including which Tasmota commit to check out and what each
+check is guarding against, is in
+[archive/docs/reference/part-2-safeboot-recovery-contingency.md](archive/docs/reference/part-2-safeboot-recovery-contingency.md).
+
+**What would remove this step:** shipping a prebuilt image with a placeholder
+where the credentials go, so the tool can write yours in and repair the image's
+checksum without anybody compiling anything. That is a known, contained piece of
+work rather than a research problem — it is simply not done yet, and until it is
+proven on hardware it would be wrong to pretend otherwise.
+
 ## Doing it
 
 ```sh
 python3 tools/s60_autoflash.py run
 ```
 
-That's the whole interface. It will:
+With the bundle in place, that is the whole interface. It will:
 
 1. **Ask you to add the plug in the eWeLink app** and turn on LAN Control.
 2. **Ask the plug what firmware it has** and where it downloads updates from.

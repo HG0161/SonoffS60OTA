@@ -17,15 +17,16 @@ python3 tools/s60_autoflash.py run
 > to official Tasmota, the last one entirely by the script above, and the
 > finished plugs are byte-for-byte identical to one flashed over USB.
 >
-> **It is not yet a one-command install for a stranger.** Before that command
-> will run, you have to build a firmware image locally and prepare a small
-> bundle of files — a step that needs a Tasmota build environment and about an
-> hour of patience. See [Before you can run it](#before-you-can-run-it).
+> **It is not yet a one-command install for a stranger.** The two unusual
+> firmware files are now published and pinned here, so no Tasmota build
+> environment is required. The remaining unfinished piece is turning them and
+> the official release files into the private per-run bundle automatically.
+> See [Before you can run it](#before-you-can-run-it).
 >
-> Removing that step is the next piece of work. Until it is done, this is
-> honestly for people who are comfortable building firmware, not for someone
-> who just wants Tasmota on a plug. If that is you, the repository is worth
-> watching rather than starting today.
+> Until that setup step is integrated, this is still for people comfortable
+> inspecting and preparing firmware files, not someone who just wants Tasmota
+> on a plug. If that is you, the repository is worth watching rather than
+> starting today.
 
 ---
 
@@ -101,21 +102,29 @@ seconds; nothing touches the plug.
 
 ## Before you can run it
 
-This is the unfinished part, and it is unfinished for a good reason rather than
-laziness.
+Partway through the conversion the plug needs two Tasmota images that are not
+part of the ordinary release download:
 
-Partway through the conversion the plug is left running a small startup
-firmware, briefly, with nowhere to get Wi-Fi details from. The way round that is
-an image with your own network name and password compiled into it. Nobody else's
-copy will do, and it plainly cannot be shipped in a public repository — so you
-have to build it, and you need a Tasmota build environment to do so.
+- [`artifacts/tasmota32c3-bluetooth.bin`](artifacts/tasmota32c3-bluetooth.bin)
+  is the Berry-capable ESP32-C3 build used while the old partition map is still
+  active. It is pinned byte-for-byte and includes its upstream source revision
+  in [the artifact notes](artifacts/README.md).
+- [`artifacts/s60-recovery-safeboot-imprintable.bin`](artifacts/s60-recovery-safeboot-imprintable.bin)
+  is the small temporary startup firmware. It contains placeholders, not a
+  real network name or password, so the published copy is safe to share.
+
+Do not flash the placeholder image directly. A private copy must first have
+your own Wi-Fi details written into its reserved fields and both ESP image
+integrity fields repaired. The code to do and validate that is present; wiring
+it into one friendly bundle-preparation command is the remaining unfinished
+setup work.
 
 The tool then needs a bundle: that image, the official Tasmota release files,
 and the partition table extracted from them, all pinned by hash so nothing can
 be swapped underneath you. That bundle lives in `captures/`, which git ignores,
 because on a real run it also holds device keys and flash contents.
 
-The scripts are all here:
+The older, fully manual local-build route remains available for developers:
 
 ```sh
 python3 tools/configure_recovery_safeboot.py        # asks for your Wi-Fi, privately
@@ -128,11 +137,9 @@ The full procedure, including which Tasmota commit to check out and what each
 check is guarding against, is in
 [archive/docs/reference/part-2-safeboot-recovery-contingency.md](archive/docs/reference/part-2-safeboot-recovery-contingency.md).
 
-**What would remove this step:** shipping a prebuilt image with a placeholder
-where the credentials go, so the tool can write yours in and repair the image's
-checksum without anybody compiling anything. That is a known, contained piece of
-work rather than a research problem — it is simply not done yet, and until it is
-proven on hardware it would be wrong to pretend otherwise.
+The published Bluetooth and imprintable Safeboot images remove the need to
+compile Tasmota locally. They do not remove the safety checks: every per-device
+image and every live flash readback still has to match its pinned provenance.
 
 ## Doing it
 

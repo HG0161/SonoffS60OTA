@@ -77,6 +77,14 @@ OFFICIAL_URLS = {
     "safeboot": f"{OFFICIAL_RELEASE_BASE}/tasmota32c3-safeboot.bin",
     "app": f"{OFFICIAL_RELEASE_BASE}/tasmota32c3.bin",
 }
+PUBLISHED_BLUETOOTH_FILE = (
+    Path(__file__).resolve().parents[1] / "artifacts" / "tasmota32c3-bluetooth.bin"
+)
+PUBLISHED_BLUETOOTH_SOURCE_COMMIT = "f5b34a26be51be2469737d2c43a62acb237c264f"
+PUBLISHED_BLUETOOTH_UPSTREAM_PATH = (
+    "https://github.com/tasmota/install/blob/firmware/firmware/unofficial/"
+    "tasmota32c3-bluetooth.bin"
+)
 PINNED_ARTIFACTS = {
     "bluetooth": {
         "size": 1_807_040,
@@ -97,6 +105,13 @@ PINNED_ARTIFACTS = {
 }
 
 RECOVERY_MODE = "private-volatile-wifi-safeboot-v1"
+# The published recovery image, with placeholders where credentials go. A user's
+# copy is that file with their own network details written in - no local build.
+IMPRINTED_MODE = "public-imprinted-safeboot-v1"
+PUBLISHED_RECOVERY_FILE = (
+    Path(__file__).resolve().parents[1] / "artifacts" / "s60-recovery-safeboot-imprintable.bin"
+)
+PUBLISHED_RECOVERY_SHA256 = "7a4f719402d9e86ef03d13d36701efb83ec751d7c694c9d7723e5219721dc803"
 RECOVERY_ARTIFACT = "recovery_safeboot"
 RECOVERY_MARKER = b"S60 recovery Wi-Fi defaults active"
 RECOVERY_PATCH = (
@@ -235,12 +250,66 @@ def require_pinned_artifacts(manifest: dict[str, Any]) -> None:
 
 
 def is_recovery_manifest(manifest: dict[str, Any]) -> bool:
+    """True for either route to a credential-carrying startup firmware.
+
+    Both put the same kind of image in the same slot; they differ only in how it
+    was obtained - built locally, or the published one with credentials written
+    in. Each is validated by its own rules below.
+    """
     mode = manifest.get("migration_mode")
     if mode is None:
         return False
-    if mode != RECOVERY_MODE:
+    if mode not in (RECOVERY_MODE, IMPRINTED_MODE):
         raise ValueError(f"unsupported migration mode {mode!r}")
     return True
+
+
+def is_imprinted_manifest(manifest: dict[str, Any]) -> bool:
+    return manifest.get("migration_mode") == IMPRINTED_MODE
+
+
+def require_imprinted_manifest(manifest_path: Path, manifest: dict[str, Any]) -> None:
+    """Validate a bundle whose startup firmware came from the published image.
+
+    The credentials are not known here and must not be, so provenance is proved
+    structurally: the artifact has to be the published file with values written
+    into the reserved fields and nothing else changed.
+    """
+    try:
+        from tools.autoflash.imprint import derived_from, require_imprinted
+    except ModuleNotFoundError:
+        from autoflash.imprint import derived_from, require_imprinted
+
+    provenance = manifest.get("imprinted_safeboot")
+    if not isinstance(provenance, dict):
+        raise ValueError("imprinted manifest has no imprinted_safeboot provenance")
+    if provenance.get("artifact") != RECOVERY_ARTIFACT:
+        raise ValueError("imprinted manifest selects an unexpected artifact")
+    if provenance.get("published_sha256") != PUBLISHED_RECOVERY_SHA256:
+        raise ValueError(
+            "the manifest was built from a different published recovery image "
+            "than this checkout ships"
+        )
+
+    try:
+        published = PUBLISHED_RECOVERY_FILE.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"cannot read the published recovery image: {exc}") from exc
+    if sha256_bytes(published) != PUBLISHED_RECOVERY_SHA256:
+        raise ValueError("the published recovery image in this checkout has been altered")
+
+    image = artifact_bytes(manifest_path, manifest, RECOVERY_ARTIFACT)
+    validate_native_image(image, SAFEBOOT_SIZE, "recovery Safeboot")
+    if RECOVERY_MARKER not in image:
+        raise ValueError("recovery Safeboot marker is absent")
+    if sha256_bytes(image) == PINNED_ARTIFACTS["safeboot"]["sha256"]:
+        raise ValueError("recovery Safeboot unexpectedly equals the official image")
+    require_imprinted(image)
+    if not derived_from(image, published):
+        raise ValueError(
+            "the bundle's startup firmware is not the published image with "
+            "credentials written in - something else differs"
+        )
 
 
 def safeboot_artifact_name(manifest: dict[str, Any]) -> str:
@@ -250,6 +319,9 @@ def safeboot_artifact_name(manifest: dict[str, Any]) -> str:
 def require_recovery_manifest(manifest_path: Path, manifest: dict[str, Any]) -> None:
     """Validate the separately built private recovery payload and provenance."""
     if not is_recovery_manifest(manifest):
+        return
+    if is_imprinted_manifest(manifest):
+        require_imprinted_manifest(manifest_path, manifest)
         return
     recovery = manifest.get("recovery_safeboot")
     if not isinstance(recovery, dict):

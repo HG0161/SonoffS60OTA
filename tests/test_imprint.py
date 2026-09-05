@@ -14,6 +14,7 @@ from tools.autoflash.imprint import (
     has_placeholders,
     require_imprinted,
     find_field,
+    derived_from,
     imprint,
     repair_image,
 )
@@ -165,3 +166,38 @@ class RealImageTests(unittest.TestCase):
         repaired = parse_esp_image(repair_image(bytes(image)))
         self.assertTrue(repaired["checksum_valid"])
         self.assertTrue(repaired["sha256_valid"])
+
+
+class DerivationTests(unittest.TestCase):
+    """Provenance without secrets: an imprinted image must be the published one
+    plus credentials, and nothing else."""
+
+    def setUp(self):
+        self.published = build_image(placeholder_payload())
+
+    def test_an_imprinted_copy_is_recognised_as_derived(self):
+        for ssid, password in (("Home", "pw"), ("Другая сеть"[:32], ""), ("S" * 32, "P" * 63)):
+            with self.subTest(ssid=ssid):
+                self.assertTrue(derived_from(imprint(self.published, ssid, password), self.published))
+
+    def test_two_different_imprints_are_both_derived_from_the_same_original(self):
+        one = imprint(self.published, "NetOne", "passwordone")
+        two = imprint(self.published, "NetTwo", "passwordtwo")
+        self.assertNotEqual(one, two)
+        self.assertTrue(derived_from(one, self.published))
+        self.assertTrue(derived_from(two, self.published))
+
+    def test_code_smuggled_in_alongside_credentials_is_caught(self):
+        tampered = bytearray(imprint(self.published, "Home", "pw"))
+        report = parse_esp_image(bytes(tampered))
+        target = report["segments"][0]["data_offset"]
+        tampered[target] ^= 0xFF                      # change a byte of the program
+        from tools.autoflash.imprint import repair_image
+        repaired = repair_image(bytes(tampered))      # and fix the hashes to hide it
+        self.assertTrue(parse_esp_image(repaired)["sha256_valid"])
+        self.assertFalse(derived_from(repaired, self.published),
+                         "a repaired but modified image must not pass as derived")
+
+    def test_a_different_firmware_is_not_derived(self):
+        other = build_image(placeholder_payload() + b"different build\x00")
+        self.assertFalse(derived_from(other, self.published))

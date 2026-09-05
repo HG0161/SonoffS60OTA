@@ -171,3 +171,36 @@ def require_imprinted(image: bytes) -> None:
             "a network name and password written into it, and installing it "
             "would leave the plug unable to reach any network"
         )
+
+
+def blank_variable_regions(image: bytes) -> bytes:
+    """The image with credentials and integrity fields zeroed.
+
+    Two copies of the same published firmware, imprinted with different
+    credentials, differ only in the reserved fields and in the checksum and hash
+    that cover them. Blanking those makes the rest directly comparable.
+    """
+    blanked = bytearray(image)
+    for marker, field in ((SSID_MARKER, SSID_FIELD_BYTES), (PASSWORD_MARKER, PASSWORD_FIELD_BYTES)):
+        try:
+            at = find_field(bytes(image), marker, field)
+        except ImprintError:
+            continue
+        blanked[at : at + field] = b"\0" * field
+    report = parse_esp_image(image)
+    blanked[report["checksum_offset"]] = 0
+    if report["hash_appended"]:
+        end = report["checksum_offset"] + 1
+        blanked[end : end + 32] = b"\0" * 32
+    return bytes(blanked)
+
+
+def derived_from(candidate: bytes, published: bytes) -> bool:
+    """True when `candidate` is `published` with credentials written into it.
+
+    Proves provenance without needing the credentials: everything outside the
+    reserved fields must be identical, so no other code can have been slipped in.
+    """
+    if len(candidate) != len(published):
+        return False
+    return blank_variable_regions(candidate) == blank_variable_regions(published)

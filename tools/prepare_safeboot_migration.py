@@ -21,6 +21,7 @@ try:
         OFFICIAL_URLS,
         OFFICIAL_INSTALL_COMMIT,
         OFFICIAL_TASMOTA_COMMIT,
+        PUBLISHED_BLUETOOTH_FILE,
         OLD_OTADATA_OFFSET,
         OTADATA_SIZE,
         SAFEBOOT_OFFSET,
@@ -48,6 +49,7 @@ except ModuleNotFoundError:
         OFFICIAL_URLS,
         OFFICIAL_INSTALL_COMMIT,
         OFFICIAL_TASMOTA_COMMIT,
+        PUBLISHED_BLUETOOTH_FILE,
         OLD_OTADATA_OFFSET,
         OTADATA_SIZE,
         SAFEBOOT_OFFSET,
@@ -96,7 +98,12 @@ def artifact_record(filename: str, data: bytes, source: str) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-dump", type=Path, required=True)
-    parser.add_argument("--bluetooth", type=Path, required=True)
+    parser.add_argument(
+        "--bluetooth",
+        type=Path,
+        default=PUBLISHED_BLUETOOTH_FILE,
+        help="Berry-capable ESP32-C3 image (default: reviewed published artifact)",
+    )
     parser.add_argument("--factory", type=Path, help="use a local factory image")
     parser.add_argument("--safeboot", type=Path, help="use a local Safeboot image")
     parser.add_argument("--app", type=Path, help="use a local native Tasmota image")

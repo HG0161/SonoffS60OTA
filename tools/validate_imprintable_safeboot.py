@@ -19,6 +19,7 @@ try:
         SSID_FIELD_BYTES,
         SSID_MARKER,
         ImprintError,
+        find_build_paths,
         find_field,
         imprint,
     )
@@ -30,6 +31,7 @@ except ModuleNotFoundError:  # running from inside tools/
         SSID_FIELD_BYTES,
         SSID_MARKER,
         ImprintError,
+        find_build_paths,
         find_field,
         imprint,
     )
@@ -87,6 +89,13 @@ def main() -> int:
         ))
     except (ImprintError, ValueError) as exc:
         checks.append(("credentials can be written and the image stays valid", False, str(exc)))
+
+    leaked = find_build_paths(image)
+    checks.append((
+        "no build-machine paths baked in",
+        not leaked,
+        "" if not leaked else f"{len(leaked)} found, e.g. {leaked[0][:70].decode(errors='replace')}",
+    ))
 
     print(f"{args.image}  ({len(image):,} bytes)\n")
     for name, ok, detail in checks:

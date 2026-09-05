@@ -18,7 +18,7 @@ back byte-for-byte what was sent.
 from __future__ import annotations
 
 import hashlib
-import struct
+import re
 
 try:
     from tools.analyze_vendor_ota import parse_esp_image
@@ -107,6 +107,39 @@ def imprint(image: bytes, ssid: str, password: str) -> bytes:
     if len(result) != len(image):
         raise ImprintError("patching changed the image length")
     return result
+
+
+BUILD_PATH_PATTERN = re.compile(rb"/(?:home|Users)/[A-Za-z0-9._-]+/[^\x00]{0,200}")
+
+
+def find_build_paths(image: bytes) -> list[bytes]:
+    """Absolute paths from the build machine left in the image.
+
+    Compilers bake __FILE__ into assertion and log strings. On a personal
+    machine those carry a username and directory layout, which has no business
+    being in a published binary.
+    """
+    return sorted({match.group(0) for match in BUILD_PATH_PATTERN.finditer(image)})
+
+
+def redact_build_paths(image: bytes, replacement: bytes = b"/build") -> bytes:
+    """Overwrite build paths in place, then repair the image.
+
+    The replacement is written into the same bytes and NUL-padded, so the string
+    stays valid and nothing moves - only a log message becomes less specific.
+    """
+    patched = bytearray(image)
+    for path in find_build_paths(bytes(image)):
+        start = 0
+        while True:
+            at = patched.find(path, start)
+            if at < 0:
+                break
+            tail = path.rsplit(b"/", 1)[-1]
+            neutral = (replacement + b"/" + tail)[: len(path)]
+            patched[at : at + len(path)] = neutral.ljust(len(path), b"\0")
+            start = at + len(path)
+    return repair_image(bytes(patched))
 
 
 def has_placeholders(image: bytes) -> bool:

@@ -23,6 +23,7 @@ __pycache__/
 *.img
 *.ota
 !artifacts/s60-ota-bridge-v3-1.2.1.ota
+!artifacts/s60-recovery-safeboot-imprintable.bin
 !artifacts/s60-ota-bridge-v3-idf5.3.1.bin
 !artifacts/s60-tasmota-15.6.0-trial-cse7766.bin
 !artifacts/s60-tasmota-15.6.0-final-cse7766.bin

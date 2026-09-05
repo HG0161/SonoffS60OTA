@@ -78,13 +78,25 @@ def main() -> int:
     args = parser.parse_args()
 
     atomic_private_write(args.output, render_header())
+    output_dir = args.output.parent
+    image = output_dir / "tasmota32c3-safeboot-recovery.bin"
     print(f"Wrote {args.output}")
     print()
-    print("Build it with the pinned Tasmota source, then publish the result:")
-    print("  tools/build_recovery_safeboot.sh /tmp/s60-tasmota-imprintable")
+    print("Run the rest from the repository root, not from tools/.")
     print()
-    print("Check the built image really carries the placeholders:")
-    print("  python3 tools/validate_imprintable_safeboot.py <image>")
+    print("1. Get the pinned Tasmota source, if you do not have it already:")
+    print("     git clone https://github.com/arendst/Tasmota.git /tmp/s60-tasmota-imprintable")
+    print("     git -C /tmp/s60-tasmota-imprintable checkout "
+          "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892")
+    print()
+    print("2. Build, pointing at this header and this output directory - the")
+    print("   defaults are the private build and would use real credentials:")
+    print("     tools/build_recovery_safeboot.sh /tmp/s60-tasmota-imprintable \\")
+    print(f"       {args.output} \\")
+    print(f"       {output_dir}")
+    print()
+    print("3. Confirm it is safe to publish and can be written into:")
+    print(f"     python3 tools/validate_imprintable_safeboot.py {image}")
     return 0
 
 

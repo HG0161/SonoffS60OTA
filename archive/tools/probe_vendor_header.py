@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from tools.download_ota import DownloadError, ota_files
+    from archive.tools.download_ota import DownloadError, ota_files
 except ModuleNotFoundError:
     from download_ota import DownloadError, ota_files
 

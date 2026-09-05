@@ -1,6 +1,6 @@
 import unittest
 
-from tools.download_ota import DownloadError, ota_files
+from archive.tools.download_ota import DownloadError, ota_files
 
 
 class DownloadOtaTests(unittest.TestCase):

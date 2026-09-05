@@ -48,6 +48,30 @@ any support or warranty you had, and the eWeLink app will no longer control it.
 
 Your Wi-Fi must be **2.4 GHz** — the plug cannot use 5 GHz.
 
+## What it has been run on
+
+| Plug | Model | Stock firmware | What was done |
+|---|---|---|---|
+| 1 | UK S60TPG | 1.1.1, updated to vendor 1.2.0 first | Converted with wrapped bridge v2, then v3, then Tasmota |
+| 2 | UK S60TPG | 1.1.1 | Converted with wrapped bridge v3 directly, then Tasmota |
+| 3 | UK S60TPG | 1.1.1 | Converted, then migrated to the official partition layout by hand |
+| 4 | UK S60TPG | 1.1.1 | The whole thing by the automated script - conversion and layout |
+
+All four are UK Type G plugs from the `SN-ESP32C3-S60-01` firmware family.
+Plugs 3 and 4 end up byte-for-byte identical to a plug flashed over USB with
+the official Tasmota release, verified by reading their flash back.
+
+**Reported by others.** [mati1988r](https://github.com/HG0161/SonoffS60OTA/issues/1)
+ran the read-only checks — mDNS discovery and the encrypted LAN connection — on
+a **European** S60 on stock **1.2.0**, and reported them working. Nobody has yet
+reported a completed conversion starting from 1.2.0 using the published
+artifacts. If that is your plug, treat the path as unverified, and please say
+how you get on.
+
+If you convert one, an issue saying which model, which region and which stock
+version is genuinely useful — this table is short because only a handful of
+plugs have ever been through it.
+
 ## Getting set up
 
 ```sh
@@ -156,7 +180,9 @@ English, including why the risky step is risky.
 ## For developers
 
 The user-facing tool sits on top of a set of smaller, single-purpose scripts in
-`tools/`, each of which can be run on its own. The research behind all of it —
+`tools/`, each of which can be run on its own. `archive/` holds the research
+tools, the bridge firmware source and the custom Tasmota build that got the
+early plugs converted - none of it is needed now, and none of it is deleted. The research behind all of it —
 how the update mechanism was worked out, the partition analysis, the reviewed
 migration plan and the manual procedure — is in
 **[docs/reference/](docs/reference/)**.

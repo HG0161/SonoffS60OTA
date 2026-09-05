@@ -10,7 +10,7 @@ import time
 try:
     from tools.probe_ota_command import CaptureServer
 except ModuleNotFoundError:
-    from probe_ota_command import CaptureServer
+    from tools.probe_ota_command import CaptureServer
 
 
 def main() -> int:

@@ -38,16 +38,16 @@ try:
     from tools.get_device_key import API, APP_ID, EwelinkError, api_json, get_devices, login_session, select_device
     from tools.probe_ota_command import WS_DISPATCH, nonce
     from tools.query_ota import ota_identity, query_ota
-    from tools.download_ota import ota_files
-    from tools.probe_vendor_header import private_bytes
+    from archive.tools.download_ota import ota_files
+    from archive.tools.probe_vendor_header import private_bytes
     from tools.websocket_minimal import WebSocket, WebSocketError
 except ModuleNotFoundError:
-    from get_device_key import API, APP_ID, EwelinkError, api_json, get_devices, login_session, select_device
-    from probe_ota_command import WS_DISPATCH, nonce
-    from query_ota import ota_identity, query_ota
+    from tools.get_device_key import API, APP_ID, EwelinkError, api_json, get_devices, login_session, select_device
+    from tools.probe_ota_command import WS_DISPATCH, nonce
+    from tools.query_ota import ota_identity, query_ota
     from download_ota import ota_files
     from probe_vendor_header import private_bytes
-    from websocket_minimal import WebSocket, WebSocketError
+    from tools.websocket_minimal import WebSocket, WebSocketError
 
 
 UPSTREAM_HOST = "52.57.99.135"

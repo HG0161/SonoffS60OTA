@@ -1,6 +1,6 @@
 import unittest
 
-from tools.ewelink_crypto import decrypt_data, encrypt_data
+from archive.tools.ewelink_crypto import decrypt_data, encrypt_data
 
 
 class EwelinkCryptoTests(unittest.TestCase):

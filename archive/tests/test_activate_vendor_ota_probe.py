@@ -1,7 +1,7 @@
 import unittest
 
-from tools.activate_vendor_ota_probe import validate_manifest_target
-from tools.download_ota import DownloadError
+from archive.tools.activate_vendor_ota_probe import validate_manifest_target
+from archive.tools.download_ota import DownloadError
 
 
 class VendorActivationProbeTests(unittest.TestCase):

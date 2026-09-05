@@ -20,21 +20,21 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from tools.activate_vendor_ota_probe import EXPECTED_HOST, EXPECTED_PORT, validate_manifest_target
-    from tools.download_ota import DownloadError, ota_files
+    from archive.tools.activate_vendor_ota_probe import EXPECTED_HOST, EXPECTED_PORT, validate_manifest_target
+    from archive.tools.download_ota import DownloadError, ota_files
     from tools.get_device_key import API, APP_ID, EwelinkError, api_json, get_devices, login_session, select_device, target_id_from_mdns
     from tools.probe_ota_command import WS_DISPATCH, nonce, private_json
-    from tools.probe_vendor_header import private_bytes
+    from archive.tools.probe_vendor_header import private_bytes
     from tools.query_ota import ota_identity, query_ota
     from tools.websocket_minimal import WebSocket, WebSocketError
 except ModuleNotFoundError:
     from activate_vendor_ota_probe import EXPECTED_HOST, EXPECTED_PORT, validate_manifest_target
     from download_ota import DownloadError, ota_files
-    from get_device_key import API, APP_ID, EwelinkError, api_json, get_devices, login_session, select_device, target_id_from_mdns
-    from probe_ota_command import WS_DISPATCH, nonce, private_json
+    from tools.get_device_key import API, APP_ID, EwelinkError, api_json, get_devices, login_session, select_device, target_id_from_mdns
+    from tools.probe_ota_command import WS_DISPATCH, nonce, private_json
     from probe_vendor_header import private_bytes
-    from query_ota import ota_identity, query_ota
-    from websocket_minimal import WebSocket, WebSocketError
+    from tools.query_ota import ota_identity, query_ota
+    from tools.websocket_minimal import WebSocket, WebSocketError
 
 
 SAFETY_FLAG = "--i-confirm-dnat-is-limited-to-the-s60"

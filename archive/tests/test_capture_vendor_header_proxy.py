@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tools.capture_vendor_header_proxy import StrictRelayServer
+from archive.tools.capture_vendor_header_proxy import StrictRelayServer
 
 
 class HeaderProxyTests(unittest.TestCase):

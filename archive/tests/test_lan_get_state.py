@@ -1,6 +1,6 @@
 import unittest
 
-from tools.lan_get_state import result_messages
+from archive.tools.lan_get_state import result_messages
 
 
 class LanGetStateMessageTests(unittest.TestCase):

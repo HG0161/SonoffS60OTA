@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.analyze_dump import analyze, interesting_strings, parse_partitions
+from archive.tools.analyze_dump import analyze, interesting_strings, parse_partitions
 
 
 def partition_entry(ptype, subtype, offset, size, label, flags=0):

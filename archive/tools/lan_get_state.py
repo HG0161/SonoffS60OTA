@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from tools.ewelink_crypto import decrypt_data, encrypt_data
+    from archive.tools.ewelink_crypto import decrypt_data, encrypt_data
 except ModuleNotFoundError:  # Support direct execution as tools/lan_get_state.py.
     from ewelink_crypto import decrypt_data, encrypt_data
 

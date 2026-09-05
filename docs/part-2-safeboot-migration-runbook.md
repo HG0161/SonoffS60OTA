@@ -22,6 +22,13 @@ must be installed. The current NVS therefore **cannot** survive the exact
 layout as-is. The live preflight checks complete blob chunks, not merely key
 names, and will refuse this state.
 
+Although the Safeboot binary contains shared Wi-Fi-manager text, that does not
+prove the initial-configuration path is enabled. The
+[official Safeboot documentation](https://tasmota.github.io/docs/Safeboot/)
+states that Safeboot does not support initial Wi-Fi configuration. This
+procedure therefore continues to require known-good retained Wi-Fi settings;
+an access-point fallback is not part of the recovery case.
+
 ## The three live stages
 
 | Stage | Device writes | Boot/layout effect | Can merely loading it write? |
@@ -55,6 +62,13 @@ python3 tools/prepare_safeboot_migration.py \
 Preparation must end with `OFFLINE ARTIFACT PREPARATION: PASS`. Never commit
 the generated `captures/` directory.
 
+The official set is frozen at `tasmota/install` commit
+`dcfc2bd2d958add881e4ecb2ccc182a15602be1d`, whose commit records Tasmota source
+`db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892`. Preparation downloads from the
+immutable commit URL, and the runtime tools independently require the reviewed
+size and SHA-256 of Bluetooth, factory, Safeboot and final application files.
+They do not trust a moving `firmware/release` URL or manifest edits.
+
 ## Stage 1: make old `ota_1` the live safety island
 
 1. Before resetting anything, use **Configuration > Backup Configuration** to
@@ -72,22 +86,13 @@ the generated `captures/` directory.
    ```
 
    Stop unless it prints `1`.
-4. Because the captured `Settings` blob is not self-contained in the future
-   20 KiB NVS, run `Reset 4` in the **ordinary Tasmota console**. Tasmota defines
-   this as resetting to firmware defaults while retaining Wi-Fi. It is being
-   used here to ask Tasmota/NVS to recreate compact current records; it is not
-   itself proof that compaction succeeded.
-5. When the plug returns, reconfirm Wi-Fi, the Berry console and
-   `flash.current_ota() == 1`. Then run `SaveData 0` in the ordinary console,
-   wait several seconds, and avoid configuration changes until normal Tasmota
-   is installed at the end. This freezes the NVS bytes every later phase
-   hashes.
-6. Keep the plug powered from a stable outlet and keep its reserved address at
+4. Run `SaveData 0` in the ordinary console, wait several seconds, and avoid
+   configuration changes until normal Tasmota is installed at the end. This
+   disables Tasmota's periodic settings saves, but it cannot prevent every
+   ESP-IDF Wi-Fi-stack NVS write. Every later phase therefore requires the live
+   NVS bytes to retain the exact preflight hash.
+5. Keep the plug powered from a stable outlet and keep its reserved address at
    `192.168.1.96`.
-
-Do not run `Reset 4` until the configuration backup is safely stored. If it
-loses Wi-Fi or disables access to the Berry console, stop; do not attempt the
-raw migration.
 
 ## Stage 2: read-only live preflight
 
@@ -119,9 +124,39 @@ The host has then independently validated:
   `0x009000..0x00dfff`;
 - live old `otadata` bytes and all reported hashes.
 
-`Reset 4` is only a candidate way to produce that state. The host-side PASS is
-the gate. If preflight still reports `Settings` incomplete, stop; do not edit,
-copy or fabricate raw NVS pages.
+Run this read-only preflight once before resetting settings: first booting the
+high Bluetooth copy may itself have produced a self-contained current record.
+If it passes, do not reset and advance to Stage 3.
+
+Prepare the remaining commands in advance and run preflight, stage and commit
+without unnecessary delay on a stable Wi-Fi link. Avoid reconnecting, roaming
+or changing Wi-Fi configuration between them. Evidence freshness does not
+override the exact live NVS hash check.
+
+If it refuses only because `Settings` remains incomplete, the saved
+configuration is the prerequisite for the controlled recovery attempt. The
+server saves a `preflight-report.json` with status `FAIL` and exits immediately,
+so this expected refusal is a clear, resumable checkpoint:
+
+1. In the ordinary Tasmota console run `Reset 4`. Tasmota defines this as
+   resetting to firmware defaults while retaining Wi-Fi. It may cause NVS to
+   recreate compact current records; it is not itself proof of success.
+2. When the plug returns, reconfirm Wi-Fi, the Berry console, and
+   `flash.current_ota() == 1`.
+3. Run `SaveData 0`, wait several seconds, stop the old preflight server if it
+   is still waiting, then start a fresh preflight invocation and paste its new
+   loader.
+
+The new host-side PASS is the gate. If it still reports incomplete
+`Settings`/`sta.apinfo`, or if `Reset 4` loses Wi-Fi or Berry access, stop. Do
+not edit, copy or fabricate raw NVS pages. Safeboot has no initial Wi-Fi setup
+fallback.
+
+If one controlled `Reset 4` attempt still leaves NVS incomplete, do not repeat
+it. The official-Safeboot procedure ends here. A separately guarded private
+recovery-image route is documented in
+[`part-2-safeboot-recovery-contingency.md`](part-2-safeboot-recovery-contingency.md);
+it must be prepared and validated offline before any additional live write.
 
 ## Stage 3: stage and independently read back Safeboot
 
@@ -138,6 +173,11 @@ downloads Safeboot as 4 KiB hexadecimal chunks, writes each chunk to inactive
 old `ota_0`, reads it back, and uploads that read-back to the host. This is
 deliberately slower than trusting a download result.
 
+The pinned Safeboot is not sector-sized. Before its final partial write, the
+device explicitly erases that 4 KiB staging sector; after writing, it proves
+the remaining 336 bytes are still `0xff`. This matters because Berry
+`flash.write` otherwise preserves the untouched tail of a partial sector.
+
 Advance only when both ends say PASS and the host has produced:
 
 ```text
@@ -145,8 +185,10 @@ captures/safeboot-migration/live/stage-report.json
 captures/safeboot-migration/live/staged-safeboot-readback.bin
 ```
 
-At this point the source table is untouched and Bluetooth is still executing
-from high old `ota_1`. If this stage fails, stop; do not proceed to commit.
+At this point the host has byte-compared the 810,672-byte image and the plug
+has separately checked the erased 336-byte sector tail. The source table is
+untouched and Bluetooth is still executing from high old `ota_1`. If this
+stage fails, stop; do not proceed to commit.
 
 ## Stage 4: separately unlock, load and arm the commit
 
@@ -222,6 +264,10 @@ import partition_core print(partition_core.Partition())
 
 - Any phase says REFUSED, FAIL, times out, or reports a changed NVS/table hash:
   stop at that phase and preserve its console output.
+- If stage or the commit's pre-write guards report `NVS changed since
+  preflight`, do not extend `--max-evidence-age`. No destructive commit write
+  has occurred. Start a fresh preflight to establish a new hash, then rerun
+  stage so its evidence matches that preflight before considering commit again.
 - Live preflight reports incomplete `Settings` or `sta.apinfo`: stop. Do not
   proceed merely because the key names appear in a dump.
 - Commit reports `S60 ROLLBACK PASS`: do not reboot or remove power even though

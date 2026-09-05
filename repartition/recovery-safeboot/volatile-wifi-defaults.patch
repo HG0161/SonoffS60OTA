@@ -1,0 +1,25 @@
+diff --git a/tasmota/tasmota_support/settings.ino b/tasmota/tasmota_support/settings.ino
+--- a/tasmota/tasmota_support/settings.ino
++++ b/tasmota/tasmota_support/settings.ino
+@@ -849,6 +849,21 @@ void SettingsLoad(void) {
+   }
+ #endif  // ESP32
+ 
++#ifdef S60_RECOVERY_WIFI_DEFAULTS
++#ifndef FIRMWARE_SAFEBOOT
++#error S60_RECOVERY_WIFI_DEFAULTS is restricted to FIRMWARE_SAFEBOOT
++#endif
++  // Safeboot deliberately does not create or persist defaults when NVS is
++  // absent or unreadable.  This recovery-only build instead recreates the
++  // compiled defaults in RAM on every boot.  SettingsDefaultSet2() copies
++  // STA_SSID1 and STA_PASS1 into the volatile Settings text pool; SettingsSave
++  // remains disabled by FIRMWARE_MINIMAL.
++  SettingsDefaultSet1();
++  SettingsDefaultSet2();
++  settings_location = 0;
++  AddLog(LOG_LEVEL_INFO, PSTR("S60 recovery Wi-Fi defaults active"));
++#endif
++
+ #ifndef FIRMWARE_MINIMAL
+   if ((0 == settings_location) || (Settings->cfg_holder != (uint16_t)CFG_HOLDER)) {  // Init defaults if cfg_holder differs from user settings in my_user_config.h
+ //  if ((0 == settings_location) || (Settings->cfg_size != sizeof(TSettings)) || (Settings->cfg_holder != (uint16_t)CFG_HOLDER)) {  // Init defaults if cfg_holder differs from user settings in my_user_config.h

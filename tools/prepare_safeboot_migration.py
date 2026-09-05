@@ -19,6 +19,8 @@ try:
         CANONICAL_NVS_SIZE,
         FLASH_SIZE,
         OFFICIAL_URLS,
+        OFFICIAL_INSTALL_COMMIT,
+        OFFICIAL_TASMOTA_COMMIT,
         OLD_OTADATA_OFFSET,
         OTADATA_SIZE,
         SAFEBOOT_OFFSET,
@@ -28,9 +30,11 @@ try:
         TABLE_OFFSET,
         TABLE_SIZE,
         TARGET_PARTITIONS,
+        TARGET_TABLE_SHA256,
         analyze_canonical_nvs,
         parse_partition_sector,
         require_exact_partitions,
+        require_pinned_artifacts,
         sha256_bytes,
         validate_native_image,
     )
@@ -42,6 +46,8 @@ except ModuleNotFoundError:
         CANONICAL_NVS_SIZE,
         FLASH_SIZE,
         OFFICIAL_URLS,
+        OFFICIAL_INSTALL_COMMIT,
+        OFFICIAL_TASMOTA_COMMIT,
         OLD_OTADATA_OFFSET,
         OTADATA_SIZE,
         SAFEBOOT_OFFSET,
@@ -51,9 +57,11 @@ except ModuleNotFoundError:
         TABLE_OFFSET,
         TABLE_SIZE,
         TARGET_PARTITIONS,
+        TARGET_TABLE_SHA256,
         analyze_canonical_nvs,
         parse_partition_sector,
         require_exact_partitions,
+        require_pinned_artifacts,
         sha256_bytes,
         validate_native_image,
     )
@@ -150,6 +158,8 @@ def main() -> int:
     target_table = factory[TABLE_OFFSET : TABLE_OFFSET + TABLE_SIZE]
     target_report = parse_partition_sector(target_table)
     require_exact_partitions(target_report, TARGET_PARTITIONS)
+    if target_report["sha256"] != TARGET_TABLE_SHA256:
+        parser.error("target table differs from the reviewed official table sector")
     target_table_path = output / "target-official-partition-table.bin"
     target_table_path.write_bytes(target_table)
 
@@ -163,9 +173,14 @@ def main() -> int:
         "app": artifact_record(app_path.name, app, str(args.app.resolve()) if args.app else OFFICIAL_URLS["app"]),
         "target_table": artifact_record(target_table_path.name, target_table, str(factory_path)),
     }
+    release = {
+        "install_commit": OFFICIAL_INSTALL_COMMIT,
+        "tasmota_commit": OFFICIAL_TASMOTA_COMMIT,
+    }
     manifest = {
         "schema": 1,
         "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "official_release": release,
         "source_dump": {
             "path": str(args.source_dump.resolve()),
             "size": len(source_dump),
@@ -181,6 +196,10 @@ def main() -> int:
         },
         "artifacts": artifacts,
     }
+    try:
+        require_pinned_artifacts(manifest)
+    except ValueError as exc:
+        parser.error(str(exc))
     manifest_path = output / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

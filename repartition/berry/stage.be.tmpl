@@ -8,7 +8,9 @@ var session = "@SESSION@"
 var expected_table = bytes("@SOURCE_TABLE_SHA256@")
 var expected_nvs = bytes("@LIVE_NVS_SHA256@")
 var expected_safeboot = bytes("@SAFEBOOT_SHA256@")
+var staging_pad_hash = bytes("@STAGING_PAD_SHA256@")
 var safeboot_length = @SAFEBOOT_LENGTH@
+var staging_pad_length = @STAGING_PAD_LENGTH@
 var stage_address = 0x20000
 
 def guard(ok, message)
@@ -66,6 +68,9 @@ def run_stage()
     var count = safeboot_length - offset
     if count > 4096 count = 4096 end
     var data = fetch_chunk(index, count)
+    # flash.write preserves untouched bytes during a partial-sector write.
+    # Erase the final sector first so the bytes after the image remain 0xFF.
+    if count < 4096 flash.erase(stage_address + offset, 0x1000) end
     flash.write(stage_address + offset, data)
     var readback = flash.read(stage_address + offset, count)
     guard(readback == data, format("read-back differs at 0x%X", stage_address + offset))
@@ -78,6 +83,10 @@ def run_stage()
 
   var staged_hash = sha_region(stage_address, safeboot_length)
   guard(staged_hash == expected_safeboot, "complete staged Safeboot SHA-256 differs")
+  if staging_pad_length > 0
+    guard(sha_region(stage_address + safeboot_length, staging_pad_length) == staging_pad_hash,
+          "staged Safeboot sector padding is not erased")
+  end
   guard(sha_region(0x8000, 0x1000) == expected_table, "source table changed during staging")
   guard(sha_region(0x9000, 0x5000) == expected_nvs, "NVS changed during staging")
 

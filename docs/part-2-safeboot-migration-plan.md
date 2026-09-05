@@ -65,6 +65,8 @@ Freeze these before touching the layout:
    release.
 8. The official table sector extracted from that factory image.
 9. SHA-256 values and byte lengths for every artifact.
+10. The immutable `tasmota/install` commit and corresponding Tasmota source
+    commit which produced the official set.
 
 The private dump and NVS data must remain outside Git.
 
@@ -103,17 +105,24 @@ Do not write the plug during this phase.
    - the live partition sector still matches the original S60 hash;
    - Wi-Fi and Berry remain usable.
 4. Back up Tasmota configuration, the S60 template, rules and custom files.
-5. Because the captured NVS is not self-contained, issue documented Tasmota
-   `Reset 4` while high Bluetooth is active. This resets firmware settings to
-   defaults while retaining Wi-Fi and may cause NVS to recreate compact
-   records. Reconfirm Wi-Fi, Berry access and old `ota_1` after restart.
-6. Disable periodic settings saves, then capture and validate the current
-   first 20 KiB of NVS again. `Reset 4` is not the proof: stop unless the live
-   preflight independently finds every declared `Settings` and `sta.apinfo`
-   blob chunk, correct total sizes, valid entry/data CRCs, and usable page
-   structure wholly within that range.
+5. Disable periodic settings saves, then run the read-only preflight. This does
+   not suppress every ESP-IDF Wi-Fi-stack NVS write, so stage and commit still
+   require an exact match to the captured NVS hash. The high Bluetooth first
+   boot may have compacted the current record; if this passes, skip the reset.
+6. If the live NVS remains incomplete, issue documented Tasmota `Reset 4`
+   while high Bluetooth is active. This resets firmware settings to defaults
+   while retaining Wi-Fi and may cause NVS to recreate compact records.
+   Reconfirm Wi-Fi, Berry access and old `ota_1` after restart.
+7. Disable periodic settings saves again, then capture and validate the first
+   20 KiB with a fresh preflight. `Reset 4` is not the proof: stop unless it
+   independently finds every declared `Settings` and `sta.apinfo` blob chunk,
+   correct total sizes, valid entry/data CRCs, and usable page structure wholly
+   within that range.
 
 Before the table commit, the low Bluetooth image remains a bootable fallback.
+Run the live phases without unnecessary delay on a stable Wi-Fi link. If the
+NVS hash changes, rerun preflight and staging against the new baseline rather
+than weakening the hash or evidence-age gates.
 
 ## Phase 2: stage the exact official Safeboot payload
 
@@ -127,7 +136,10 @@ written only while Bluetooth executes from the high slot.
    area at `0x020000` first.
 3. Read the staged bytes back using the RAM-only flash-download service and
    require their SHA-256 to match the pinned artifact.
-4. Keep the official table sector, original table sector and exact Safeboot
+4. Explicitly erase the final staging sector before the partial final write,
+   then require the bytes from the image end to the sector boundary to remain
+   erased. A partial Berry `flash.write` otherwise preserves that sector tail.
+5. Keep the official table sector, original table sector and exact Safeboot
    length available for the final operation.
 
 Staging at `0x020000` proves the payload before any system-data address is
@@ -178,6 +190,16 @@ Writing Safeboot at `0x010000` destroys the old NVS tail and old boot metadata.
 After that copy begins, an unexpected reset relies on the bootloader locating
 the still-valid high Bluetooth image until the official table is committed.
 Power loss during the table-sector erase/write can require physical recovery.
+
+## Contingency when retained NVS cannot pass
+
+Do not weaken the official-Safeboot NVS gate. After one controlled `Reset 4`
+attempt still fails, use only the separately reviewed procedure in
+[`part-2-safeboot-recovery-contingency.md`](part-2-safeboot-recovery-contingency.md).
+It temporarily installs a private Safeboot build that recreates compile-time
+Wi-Fi defaults in RAM, commits the same byte-exact official partition table,
+installs the pinned official app, and finally restores the exact official
+Safeboot payload from that running app.
 
 ## Phase 4: verify official Safeboot
 

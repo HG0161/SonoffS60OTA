@@ -263,9 +263,18 @@ def main():
         complete_at: float | None = None
         import socket as _sock
         while time.monotonic() < deadline:
+            # Delivery is checked first.  A quiet cloud socket must never delay
+            # the exit: every byte may already be on the device.
+            if server.unique_bytes_served() == len(firmware):
+                if complete_at is None:
+                    complete_at = time.monotonic()
+                    print("  Complete firmware byte coverage observed; allowing verification time.")
+                elif time.monotonic() - complete_at >= 8:
+                    break
+
             if ws is not None:
                 try:
-                    msg = ws.receive_json(timeout=1.0)
+                    msg = ws.receive_json(timeout=0.5)
                     print(f"  Cloud: {json.dumps(cloud_summary(msg))}")
                     if msg.get("sequence") == seq and msg.get("error", 0) != 0:
                         raise EwelinkError(f"Cloud rejected upgrade command: error {msg['error']}")
@@ -281,14 +290,16 @@ def main():
                         pass
                     ws = None
 
-            if server.unique_bytes_served() == len(firmware):
-                if complete_at is None:
-                    complete_at = time.monotonic()
-                    print("  Complete firmware byte coverage observed; allowing verification time.")
-                elif time.monotonic() - complete_at >= 8:
-                    break
             else:
-                complete_at = None
+                time.sleep(0.25)
+    except KeyboardInterrupt:
+        # Ctrl-C after the whole image has been delivered is not a failure: the
+        # device already has it and is rebooting.  Interrupting before that is.
+        if server is not None and server.unique_bytes_served() == len(firmware):
+            print("\n  Interrupted after every byte was delivered; treating as complete.")
+        else:
+            print("\n  Interrupted before the firmware was fully delivered.", file=sys.stderr)
+            run_error = "interrupted before the firmware was fully delivered"
     except (EwelinkError, WebSocketError, OSError, KeyError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         run_error = str(exc)

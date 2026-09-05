@@ -31,6 +31,7 @@ PARTITION_MAGIC = 0x50AA
 MD5_MAGIC = 0xEBEB
 
 SOURCE_TABLE_SHA256 = "f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf"
+TARGET_TABLE_SHA256 = "619e5a9b645198b25d04949997221f587776965dfd13cbceddf9862c53e655c1"
 
 SOURCE_PARTITIONS = (
     ("nvs", 0x01, 0x02, 0x009000, 0x010000, 0x0),
@@ -65,14 +66,45 @@ SPIFFS_OFFSET = 0x3B0000
 SPIFFS_SIZE = 0x50000
 SAFEBOOT_STAGE_OFFSET = OLD_OTA0_OFFSET
 
+OFFICIAL_INSTALL_COMMIT = "dcfc2bd2d958add881e4ecb2ccc182a15602be1d"
+OFFICIAL_TASMOTA_COMMIT = "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892"
 OFFICIAL_RELEASE_BASE = (
-    "https://raw.githubusercontent.com/tasmota/install/firmware/firmware/release"
+    "https://raw.githubusercontent.com/tasmota/install/"
+    f"{OFFICIAL_INSTALL_COMMIT}/firmware/release"
 )
 OFFICIAL_URLS = {
     "factory": f"{OFFICIAL_RELEASE_BASE}/tasmota32c3.factory.bin",
     "safeboot": f"{OFFICIAL_RELEASE_BASE}/tasmota32c3-safeboot.bin",
     "app": f"{OFFICIAL_RELEASE_BASE}/tasmota32c3.bin",
 }
+PINNED_ARTIFACTS = {
+    "bluetooth": {
+        "size": 1_807_040,
+        "sha256": "a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708",
+    },
+    "factory": {
+        "size": 3_098_496,
+        "sha256": "5c4181c756fb0a98c107a4d53389536f878b69fedbbce47168b07458122f53e8",
+    },
+    "safeboot": {
+        "size": 810_672,
+        "sha256": "364339a828c243ddf5fee3ed24f8bf352dffc87b2572ca9d7f48736bcb852bdc",
+    },
+    "app": {
+        "size": 2_180_992,
+        "sha256": "5991d11ad8f8b100b165974e81544594394df1d12d165012a42c002e1985cb1c",
+    },
+}
+
+RECOVERY_MODE = "private-volatile-wifi-safeboot-v1"
+RECOVERY_ARTIFACT = "recovery_safeboot"
+RECOVERY_MARKER = b"S60 recovery Wi-Fi defaults active"
+RECOVERY_PATCH = (
+    Path(__file__).resolve().parents[1]
+    / "repartition"
+    / "recovery-safeboot"
+    / "volatile-wifi-defaults.patch"
+)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -177,6 +209,98 @@ def require_exact_partitions(
     wanted = tuple(expected)
     if actual != wanted:
         raise ValueError(f"partition entries differ\nactual={actual!r}\nexpected={wanted!r}")
+
+
+def require_pinned_artifacts(manifest: dict[str, Any]) -> None:
+    """Refuse substitution of the frozen Bluetooth/official firmware set."""
+    release = manifest.get("official_release")
+    expected_release = {
+        "install_commit": OFFICIAL_INSTALL_COMMIT,
+        "tasmota_commit": OFFICIAL_TASMOTA_COMMIT,
+    }
+    if release != expected_release:
+        raise ValueError(
+            "manifest official-release identity differs from the reviewed frozen set"
+        )
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict):
+        raise ValueError("manifest has no artifact map")
+    for name, expected in PINNED_ARTIFACTS.items():
+        record = artifacts.get(name)
+        if not isinstance(record, dict):
+            raise ValueError(f"manifest has no pinned {name} artifact")
+        for field in ("size", "sha256"):
+            if record.get(field) != expected[field]:
+                raise ValueError(f"{name} {field} differs from the reviewed frozen set")
+
+
+def is_recovery_manifest(manifest: dict[str, Any]) -> bool:
+    mode = manifest.get("migration_mode")
+    if mode is None:
+        return False
+    if mode != RECOVERY_MODE:
+        raise ValueError(f"unsupported migration mode {mode!r}")
+    return True
+
+
+def safeboot_artifact_name(manifest: dict[str, Any]) -> str:
+    return RECOVERY_ARTIFACT if is_recovery_manifest(manifest) else "safeboot"
+
+
+def require_recovery_manifest(manifest_path: Path, manifest: dict[str, Any]) -> None:
+    """Validate the separately built private recovery payload and provenance."""
+    if not is_recovery_manifest(manifest):
+        return
+    recovery = manifest.get("recovery_safeboot")
+    if not isinstance(recovery, dict):
+        raise ValueError("recovery manifest has no recovery_safeboot provenance")
+    if recovery.get("artifact") != RECOVERY_ARTIFACT:
+        raise ValueError("recovery manifest selects an unexpected artifact")
+    if recovery.get("tasmota_commit") != OFFICIAL_TASMOTA_COMMIT:
+        raise ValueError("recovery Safeboot uses an unexpected Tasmota commit")
+    try:
+        patch_hash = sha256_bytes(RECOVERY_PATCH.read_bytes())
+    except OSError as exc:
+        raise ValueError(f"cannot read reviewed recovery patch: {exc}") from exc
+    if recovery.get("patch_sha256") != patch_hash:
+        raise ValueError("recovery Safeboot patch hash differs")
+
+    artifacts = manifest.get("artifacts", {})
+    record = artifacts.get(RECOVERY_ARTIFACT)
+    if not isinstance(record, dict):
+        raise ValueError("recovery Safeboot artifact record is missing")
+    image = artifact_bytes(manifest_path, manifest, RECOVERY_ARTIFACT)
+    validate_native_image(image, SAFEBOOT_SIZE, "recovery Safeboot")
+    if RECOVERY_MARKER not in image:
+        raise ValueError("recovery Safeboot marker is absent")
+    if sha256_bytes(image) == PINNED_ARTIFACTS["safeboot"]["sha256"]:
+        raise ValueError("recovery Safeboot unexpectedly equals the official image")
+
+    validation_name = recovery.get("validation_file")
+    if not isinstance(validation_name, str) or Path(validation_name).name != validation_name:
+        raise ValueError("recovery validation filename is invalid")
+    try:
+        validation_bytes = (manifest_path.parent / validation_name).read_bytes()
+        validation = json.loads(validation_bytes)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot load recovery validation report: {exc}") from exc
+    if sha256_bytes(validation_bytes) != recovery.get("validation_sha256"):
+        raise ValueError("recovery validation report hash differs")
+    expected = {
+        "schema": 1,
+        "kind": "s60-volatile-wifi-recovery-safeboot",
+        "tasmota_commit": OFFICIAL_TASMOTA_COMMIT,
+        "size": len(image),
+        "sha256": sha256_bytes(image),
+        "max_size": SAFEBOOT_SIZE,
+        "headroom": SAFEBOOT_SIZE - len(image),
+        "password_present": True,
+    }
+    for field, value in expected.items():
+        if validation.get(field) != value:
+            raise ValueError(f"recovery validation {field} differs")
+    if validation.get("credential_header_sha256") != recovery.get("credential_header_sha256"):
+        raise ValueError("recovery credential-header identity differs")
 
 
 def validate_native_image(data: bytes, maximum_size: int, label: str) -> dict[str, Any]:

@@ -33,12 +33,17 @@ try:
         SOURCE_TABLE_SHA256,
         TABLE_SIZE,
         TARGET_PARTITIONS,
+        TARGET_TABLE_SHA256,
         analyze_canonical_nvs,
         artifact_bytes,
         load_evidence,
         load_manifest,
         parse_partition_sector,
         require_exact_partitions,
+        require_pinned_artifacts,
+        require_recovery_manifest,
+        is_recovery_manifest,
+        safeboot_artifact_name,
         sector_aligned_size,
         sha256_bytes,
         verify_manifest_files,
@@ -53,12 +58,17 @@ except ModuleNotFoundError:
         SOURCE_TABLE_SHA256,
         TABLE_SIZE,
         TARGET_PARTITIONS,
+        TARGET_TABLE_SHA256,
         analyze_canonical_nvs,
         artifact_bytes,
         load_evidence,
         load_manifest,
         parse_partition_sector,
         require_exact_partitions,
+        require_pinned_artifacts,
+        require_recovery_manifest,
+        is_recovery_manifest,
+        safeboot_artifact_name,
         sector_aligned_size,
         sha256_bytes,
         verify_manifest_files,
@@ -69,8 +79,9 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ROOT / "repartition" / "berry"
 LOCK_PATH = ROOT / "REPARTITION_LOCK"
 COMMIT_FLAG = "--i-accept-power-loss-may-require-opening-the-plug"
-PHASES = ("preflight", "stage", "commit")
+PHASES = ("preflight", "stage", "commit", "restore")
 MAX_POST_SIZE = 9000
+RESTORE_FLAG = "--i-confirm-normal-app-is-stable"
 
 
 def utc_now() -> str:
@@ -129,6 +140,22 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
     )
 
 
+def phase_confirmation_refusal(
+    phase: str,
+    commit_confirmed: bool,
+    restore_confirmed: bool,
+    lock_path: Path = LOCK_PATH,
+) -> str | None:
+    if phase == "commit":
+        if lock_path.exists():
+            return f"repartition lock is active at {lock_path}"
+        if not commit_confirmed:
+            return f"commit requires {COMMIT_FLAG}"
+    if phase == "restore" and not restore_confirmed:
+        return f"restore requires {RESTORE_FLAG}"
+    return None
+
+
 class MigrationState:
     def __init__(
         self,
@@ -151,10 +178,18 @@ class MigrationState:
         self.captures: dict[str, dict[int, bytes]] = {}
         self.manifest_sha256 = sha256_bytes(manifest_path.read_bytes())
 
-        self.safeboot = artifact_bytes(manifest_path, manifest, "safeboot")
+        self.recovery_mode = is_recovery_manifest(manifest)
+        if phase == "restore" and not self.recovery_mode:
+            raise ValueError("official migration manifests have no recovery image to restore")
+        self.safeboot_name = safeboot_artifact_name(manifest)
+        self.safeboot = artifact_bytes(manifest_path, manifest, self.safeboot_name)
+        self.official_safeboot = artifact_bytes(manifest_path, manifest, "safeboot")
+        self.app = artifact_bytes(manifest_path, manifest, "app")
         self.target_table = artifact_bytes(manifest_path, manifest, "target_table")
         target_report = parse_partition_sector(self.target_table)
         require_exact_partitions(target_report, TARGET_PARTITIONS)
+        if target_report["sha256"] != TARGET_TABLE_SHA256:
+            raise ValueError("target table differs from the reviewed official sector")
         self.target_table_sha256 = target_report["sha256"]
 
         self.live_preflight: dict[str, Any] | None = None
@@ -177,6 +212,15 @@ class MigrationState:
                 raise ValueError("stage and preflight evidence disagree about NVS")
             if self.stage_evidence.get("staged_sha256") != sha256_bytes(self.safeboot):
                 raise ValueError("stage evidence does not match pinned Safeboot")
+        self.commit_evidence: dict[str, Any] | None = None
+        if phase == "restore":
+            self.commit_evidence = load_evidence(
+                evidence_dir / "commit-report.json", "commit", max_evidence_age
+            )
+            if self.commit_evidence.get("manifest_sha256") != self.manifest_sha256:
+                raise ValueError("commit evidence belongs to a different manifest")
+            if self.commit_evidence.get("safeboot_sha256") != sha256_bytes(self.safeboot):
+                raise ValueError("commit evidence does not match recovery Safeboot")
 
     def replacements(self) -> dict[str, str]:
         safeboot_length = len(self.safeboot)
@@ -203,6 +247,24 @@ class MigrationState:
             "ERASED_TAIL_LENGTH": str(erased_tail_length),
             "ERASED_TAIL_SHA256": sha256_bytes(b"\xff" * erased_tail_length),
             "ERASED_OTADATA_SHA256": sha256_bytes(b"\xff" * OTADATA_SIZE),
+            "OFFICIAL_SAFEBOOT_SHA256": sha256_bytes(self.official_safeboot),
+            "OFFICIAL_SAFEBOOT_LENGTH": str(len(self.official_safeboot)),
+            "OFFICIAL_SAFEBOOT_COPY_LENGTH": str(sector_aligned_size(len(self.official_safeboot))),
+            "OFFICIAL_STAGING_PAD_LENGTH": str(
+                sector_aligned_size(len(self.official_safeboot)) - len(self.official_safeboot)
+            ),
+            "OFFICIAL_STAGING_PAD_SHA256": sha256_bytes(
+                b"\xff"
+                * (sector_aligned_size(len(self.official_safeboot)) - len(self.official_safeboot))
+            ),
+            "OFFICIAL_ERASED_TAIL_LENGTH": str(
+                SAFEBOOT_SIZE - sector_aligned_size(len(self.official_safeboot))
+            ),
+            "OFFICIAL_ERASED_TAIL_SHA256": sha256_bytes(
+                b"\xff" * (SAFEBOOT_SIZE - sector_aligned_size(len(self.official_safeboot)))
+            ),
+            "APP_SHA256": sha256_bytes(self.app),
+            "APP_LENGTH": str(len(self.app)),
         }
 
     def render_berry(self) -> bytes:
@@ -222,18 +284,20 @@ class MigrationState:
         return encoded
 
     def safeboot_chunk(self, index: int) -> bytes:
-        if self.phase != "stage":
+        if self.phase not in {"stage", "restore"}:
             raise ValueError("Safeboot chunks are unavailable in this phase")
-        count = (len(self.safeboot) + SECTOR_SIZE - 1) // SECTOR_SIZE
+        payload = self.official_safeboot if self.phase == "restore" else self.safeboot
+        count = (len(payload) + SECTOR_SIZE - 1) // SECTOR_SIZE
         if index < 0 or index >= count:
             raise ValueError("Safeboot chunk index is outside the artifact")
-        return self.safeboot[index * SECTOR_SIZE : (index + 1) * SECTOR_SIZE]
+        return payload[index * SECTOR_SIZE : (index + 1) * SECTOR_SIZE]
 
     def receive_capture(self, kind: str, index: int, body: bytes) -> None:
         allowed = {
             "preflight": {"table": TABLE_SIZE, "nvs": CANONICAL_NVS_SIZE, "otadata": OTADATA_SIZE},
             "stage": {"staged": len(self.safeboot)},
             "commit": {},
+            "restore": {"restored": len(self.official_safeboot)},
         }[self.phase]
         if kind not in allowed:
             raise ValueError(f"capture {kind!r} is unavailable in {self.phase}")
@@ -276,8 +340,10 @@ class MigrationState:
             self._finish_preflight(report)
         elif self.phase == "stage":
             self._finish_stage(report)
-        else:
+        elif self.phase == "commit":
             self._finish_commit(report)
+        else:
+            self._finish_restore(report)
 
     def _base_evidence(self, phase: str, status: str) -> dict[str, Any]:
         return {
@@ -299,7 +365,23 @@ class MigrationState:
         if table_report["sha256"] != SOURCE_TABLE_SHA256:
             raise ValueError("uploaded table is not the allow-listed source table")
         nvs_report = analyze_canonical_nvs(nvs)
-        if not nvs_report["ready"]:
+        if not nvs_report["ready"] and not self.recovery_mode:
+            atomic_write(self.evidence_dir / "live-partition-table.bin", table)
+            atomic_write(self.evidence_dir / "live-canonical-nvs.bin", nvs)
+            atomic_write(self.evidence_dir / "live-old-otadata.bin", otadata)
+            evidence = self._base_evidence("preflight", "FAIL")
+            evidence.update(
+                {
+                    "reason": "canonical_nvs_not_self_contained",
+                    "table_sha256": sha256_bytes(table),
+                    "nvs_sha256": sha256_bytes(nvs),
+                    "otadata_sha256": sha256_bytes(otadata),
+                    "canonical_nvs": nvs_report,
+                }
+            )
+            atomic_json(self.evidence_dir / "preflight-report.json", evidence)
+            self.complete = True
+            self.result_status = "FAIL"
             raise ValueError(
                 "live canonical NVS is not self-contained: "
                 f"missing={nvs_report['missing_keys']}, "
@@ -321,6 +403,8 @@ class MigrationState:
         evidence = self._base_evidence("preflight", "PASS")
         evidence.update(expected)
         evidence["canonical_nvs"] = nvs_report
+        evidence["canonical_nvs_ready"] = nvs_report["ready"]
+        evidence["migration_mode"] = self.manifest.get("migration_mode", "official")
         atomic_json(self.evidence_dir / "preflight-report.json", evidence)
         self.complete = True
         self.result_status = "PASS"
@@ -359,6 +443,29 @@ class MigrationState:
         evidence.update(expected)
         evidence["rollback"] = report.get("rollback")
         atomic_json(self.evidence_dir / "commit-report.json", evidence)
+        self.complete = True
+        self.result_status = status
+
+    def _finish_restore(self, report: dict[str, str]) -> None:
+        status = report.get("status")
+        if status not in {"PASS", "FAIL"}:
+            raise ValueError("restore status is neither PASS nor FAIL")
+        expected = {
+            "current_ota": "0",
+            "target_table_sha256": self.target_table_sha256,
+            "app_sha256": sha256_bytes(self.app),
+            "official_safeboot_sha256": sha256_bytes(self.official_safeboot),
+            "official_safeboot_size": str(len(self.official_safeboot)),
+        }
+        require_report_fields(report, expected)
+        if status == "PASS":
+            restored = self.assembled_capture("restored", len(self.official_safeboot))
+            if restored != self.official_safeboot:
+                raise ValueError("host read-back differs byte-for-byte from official Safeboot")
+            atomic_write(self.evidence_dir / "official-safeboot-readback.bin", restored)
+        evidence = self._base_evidence("restore", status)
+        evidence.update(expected)
+        atomic_json(self.evidence_dir / "restore-report.json", evidence)
         self.complete = True
         self.result_status = status
 
@@ -461,8 +568,9 @@ def berry_loader(base_url: str, phase: str) -> str:
         "var code=wc.get_string() return compile(code)() end "
     )
     url = f"{base_url}/berry/{phase}.be"
-    if phase == "commit":
-        return prefix + f"s60_commit=s60_urlbeload('{url}')"
+    if phase in {"commit", "restore"}:
+        name = "s60_commit" if phase == "commit" else "s60_restore"
+        return prefix + f"{name}=s60_urlbeload('{url}')"
     return prefix + f"return s60_urlbeload('{url}')"
 
 
@@ -477,6 +585,7 @@ def main() -> int:
     parser.add_argument("--max-evidence-age", type=int, default=7200)
     parser.add_argument("--wait", type=int, default=1800, help="seconds to wait for a phase report")
     parser.add_argument(COMMIT_FLAG, action="store_true")
+    parser.add_argument(RESTORE_FLAG, action="store_true")
     args = parser.parse_args()
 
     try:
@@ -494,17 +603,20 @@ def main() -> int:
     try:
         manifest = load_manifest(manifest_path)
         verify_manifest_files(manifest_path, manifest)
-    except ValueError as exc:
+        require_pinned_artifacts(manifest)
+        require_recovery_manifest(manifest_path, manifest)
+    except (KeyError, ValueError) as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
 
-    if args.phase == "commit":
-        if LOCK_PATH.exists():
-            print(f"REFUSING: repartition lock is active at {LOCK_PATH}", file=sys.stderr)
-            return 2
-        if not args.i_accept_power_loss_may_require_opening_the_plug:
-            print(f"REFUSING: commit requires {COMMIT_FLAG}", file=sys.stderr)
-            return 2
+    refusal = phase_confirmation_refusal(
+        args.phase,
+        args.i_accept_power_loss_may_require_opening_the_plug,
+        args.i_confirm_normal_app_is_stable,
+    )
+    if refusal is not None:
+        print(f"REFUSING: {refusal}", file=sys.stderr)
+        return 2
 
     base_url = f"http://{listen_ip}:{args.listen_port}"
     try:
@@ -522,9 +634,10 @@ def main() -> int:
     print(f"Serving only device {device_ip} at {base_url}")
     print("\nPaste this as ONE line in the Berry console (do not prefix it with `br`):")
     print(berry_loader(base_url, args.phase))
-    if args.phase == "commit":
+    if args.phase in {"commit", "restore"}:
+        function_name = "s60_commit" if args.phase == "commit" else "s60_restore"
         print("\nLoading performs no writes. After it prints a loaded closure, arm separately with:")
-        print(f's60_commit("{state.arm_token}")')
+        print(f'{function_name}("{state.arm_token}")')
 
     try:
         server = MigrationServer((listen_ip, args.listen_port), device_ip, state)

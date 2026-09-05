@@ -1,0 +1,130 @@
+# S60 recovery cleanup: replace private Safeboot with exact official bytes.
+# Loading this file performs no writes. It returns the one-use restore closure.
+import flash
+import crypto
+
+var base_url = "@BASE_URL@"
+var session = "@SESSION@"
+var arm_token = "@ARM_TOKEN@"
+var armed = true
+var target_table_hash = bytes("@TARGET_TABLE_SHA256@")
+var recovery_safeboot_hash = bytes("@SAFEBOOT_SHA256@")
+var official_safeboot_hash = bytes("@OFFICIAL_SAFEBOOT_SHA256@")
+var official_pad_hash = bytes("@OFFICIAL_STAGING_PAD_SHA256@")
+var official_tail_hash = bytes("@OFFICIAL_ERASED_TAIL_SHA256@")
+var app_hash = bytes("@APP_SHA256@")
+var official_length = @OFFICIAL_SAFEBOOT_LENGTH@
+var official_copy_length = @OFFICIAL_SAFEBOOT_COPY_LENGTH@
+var official_pad_length = @OFFICIAL_STAGING_PAD_LENGTH@
+var official_tail_length = @OFFICIAL_ERASED_TAIL_LENGTH@
+var app_length = @APP_LENGTH@
+
+def guard(ok, message)
+  if !ok
+    raise "migration_refused", message
+  end
+end
+
+def sha_region(address, length)
+  var hash = crypto.SHA256()
+  var offset = 0
+  while offset < length
+    var count = length - offset
+    if count > 4096 count = 4096 end
+    hash.update(flash.read(address + offset, count))
+    offset += count
+    tasmota.yield()
+  end
+  return hash.out()
+end
+
+def fetch_chunk(index, expected_length)
+  var path = format("/chunk/safeboot/%i", index)
+  var client = webclient()
+  client.begin(base_url + path)
+  var status = client.GET()
+  guard(status == 200, format("GET %s returned HTTP %i", path, status))
+  guard(client.get_size() == expected_length * 2, "official Safeboot chunk HTTP length differs")
+  var encoded = client.get_string()
+  guard(size(encoded) == expected_length * 2, "official Safeboot chunk body length differs")
+  var data = bytes(encoded)
+  guard(size(data) == expected_length, "official Safeboot chunk hex is invalid")
+  return data
+end
+
+def post_text(path, body)
+  var client = webclient()
+  client.begin(base_url + path)
+  var status = client.POST(body)
+  client.close()
+  guard(status == 200, format("POST %s returned HTTP %i", path, status))
+end
+
+def best_effort_report(status)
+  try
+    var body = format(
+      "session=%s\nstatus=%s\ncurrent_ota=%i\ntarget_table_sha256=%s\n" +
+      "app_sha256=%s\nofficial_safeboot_sha256=%s\nofficial_safeboot_size=%i\n",
+      session, status, flash.current_ota(), target_table_hash.tohex(), app_hash.tohex(),
+      official_safeboot_hash.tohex(), official_length)
+    var client = webclient()
+    client.begin(base_url + "/report/restore")
+    var code = client.POST(body)
+    client.close()
+    print(format("S60 RESTORE report HTTP %i", code))
+  except .. as report_exception, report_message
+    print("S60 RESTORE report failed:", report_exception, report_message)
+  end
+end
+
+def restore(provided_token)
+  guard(armed, "this restore closure has already been consumed")
+  guard(provided_token == arm_token, "arming token differs")
+  guard(tasmota.arch() == "esp32c3", "device is not ESP32-C3")
+  guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
+  guard(flash.current_ota() == 0, "official app0 must be running")
+  guard(sha_region(0x8000, 0x1000) == target_table_hash, "canonical partition table differs")
+  guard(sha_region(0xE0000, app_length) == app_hash, "running app0 differs from pinned official image")
+  guard(sha_region(0x10000, @SAFEBOOT_LENGTH@) == recovery_safeboot_hash,
+        "factory partition no longer contains the recovery Safeboot")
+  armed = false
+
+  try
+    var offset = 0
+    var index = 0
+    while offset < official_length
+      var count = official_length - offset
+      if count > 4096 count = 4096 end
+      var data = fetch_chunk(index, count)
+      if count < 4096 flash.erase(0x10000 + offset, 0x1000) end
+      flash.write(0x10000 + offset, data)
+      var readback = flash.read(0x10000 + offset, count)
+      guard(readback == data, format("official Safeboot read-back differs at 0x%X", 0x10000 + offset))
+      post_text(format("/capture/restored/%i", index), readback.tohex())
+      offset += count
+      index += 1
+      if index % 16 == 0 print(format("S60 RESTORE: %i/%i bytes", offset, official_length)) end
+      tasmota.yield()
+    end
+    guard(sha_region(0x10000, official_length) == official_safeboot_hash,
+          "complete official Safeboot SHA-256 differs")
+    if official_pad_length > 0
+      guard(sha_region(0x10000 + official_length, official_pad_length) == official_pad_hash,
+            "official Safeboot sector padding is not erased")
+    end
+    if official_tail_length > 0
+      flash.erase(0x10000 + official_copy_length, official_tail_length)
+      guard(sha_region(0x10000 + official_copy_length, official_tail_length) == official_tail_hash,
+            "official Safeboot partition tail is not erased")
+    end
+  except .. as restore_exception, restore_message
+    best_effort_report("FAIL")
+    raise restore_exception, restore_message
+  end
+
+  best_effort_report("PASS")
+  print("S60 RESTORE PASS: factory partition now contains exact official Safeboot")
+  return true
+end
+
+return restore

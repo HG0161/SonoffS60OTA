@@ -97,7 +97,9 @@ def main() -> int:
     args = parser.parse_args()
 
     email = args.email or input("eWeLink email: ").strip()
-    password = getpass.getpass("eWeLink password (not stored): ")
+    password = os.environ.get("EWELINK_PASSWORD") or getpass.getpass(
+        "eWeLink password (not stored): "
+    )
     if not email or not password:
         print("Email and password are required.", file=sys.stderr)
         return 2

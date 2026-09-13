@@ -1,11 +1,10 @@
 # Sonoff S60 → Tasmota, without opening the plug
 
-Turns a stock Sonoff S60 smart plug into one running **official Tasmota**, over
-Wi-Fi, with no soldering and without taking the plug apart.
+Turns a stock Sonoff S60 smart plug into one running **Tasmota** using
+OTA - no soldering, no taking the plug apart.
 
-The conversion is driven by one command, which asks questions in plain English,
-checks the plug at every stage, and can be stopped and restarted at any point
-without losing its place:
+There's one script with checks at every stage. Resumable and can be 
+restarted at any point
 
 ```sh
 python3 tools/s60_autoflash.py run
@@ -13,13 +12,13 @@ python3 tools/s60_autoflash.py run
 
 > ### Where this is up to
 >
-> **The conversion works.** It has taken four plugs from the shop-bought state
-> to official Tasmota, the last one entirely by the script above, and the
-> finished plugs are byte-for-byte identical to one flashed over USB.
+> **The conversion works.** Ive taken four plugs from various stock
+> 1.1.0 and 1.2.0 states to official Tasmota. The last one entirely
+> by the script above
 >
-> **It is not yet a one-command install for a stranger.** The two unusual
-> firmware files are now published and pinned here, so no Tasmota build
-> environment is required. The remaining unfinished piece is turning them and
+> **It is not yet a one-command install for a stranger.** The two 
+> firmware files are now published and pinned here
+> The remaining unfinished piece is turning them and
 > the official release files into the private per-run bundle automatically.
 > See [Before you can run it](#before-you-can-run-it).
 >

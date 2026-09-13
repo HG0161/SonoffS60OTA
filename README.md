@@ -67,7 +67,7 @@ Your Wi-Fi must be **2.4 GHz** — the plug cannot use 5 GHz.
 
 | Plug | Model | Stock firmware | What was done |
 |---|---|---|---|
-| 1 | UK S60TPG | 1.1.1, updated to vendor 1.2.0 first | Converted with wrapped bridge v2, then v3, then Tasmota |
+| 1 | UK S60TPG | 1.2.0 | Converted with wrapped bridge v2, then v3, then Tasmota |
 | 2 | UK S60TPG | 1.1.1 | Converted with wrapped bridge v3 directly, then Tasmota |
 | 3 | UK S60TPG | 1.1.1 | Converted, then migrated to the official partition layout by hand |
 | 4 | UK S60TPG | 1.1.1 | The whole thing by the automated script - conversion and layout |
